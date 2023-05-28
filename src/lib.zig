@@ -63,7 +63,7 @@ pub fn Lexer(comptime ReaderType: type) type {
 			return res;
 		}
 
-		fn deinit(self: *Self) void {
+		pub fn deinit(self: *Self) void {
 			self.stack.deinit();
 			for (self.tokens.items) |t| if (t.len > 0) self.allocator.free(t);
 			self.tokens.deinit();
@@ -89,24 +89,29 @@ pub fn Lexer(comptime ReaderType: type) type {
 		}
 
 		fn getOrPut(self: *Self, key: []u8, val: TagType) !TagType {
-			const maybe_id = try self.token_ids.fetchPut(key, val);
-			if (maybe_id) |i| return i.value;
+			const maybe_id = self.token_ids.get(key);
+			if (maybe_id) |id| return id;
 
 			const copy = try self.allocator.alloc(u8, key.len);
 			@memcpy(copy, key);
 			try self.tokens.append(copy);
+			try self.token_ids.put(copy, val);
 			return val;
 		}
 		
 		fn eatSpace(self: *Self) !void {
 			var byte = try self.reader.reader().readByte();
-			log.debug("ate '{c}'", .{ byte });
+			// log.debug("ate '{c}'", .{ byte });
 			while (byte == ' ' or byte == '\t') {
 				byte = try self.reader.reader().readByte(); 
-				log.debug("ate '{c}'", .{ byte });
+				// log.debug("ate '{c}'", .{ byte });
 			}
-			log.debug("put back '{c}'", .{ byte });
+			// log.debug("put back '{c}'", .{ byte });
 			try self.reader.putBackByte(byte);
+		}
+
+		inline fn inAttribute(self: *Self) bool {
+			return self.stack.items.len > 0 and self.stack.items[self.stack.items.len - 1] == .attribute;
 		}
 
 		fn nextToken2(self: *Self) !Token {
@@ -122,7 +127,7 @@ pub fn Lexer(comptime ReaderType: type) type {
 				}
 			};
 			if (token_buf[0] == '\\') {
-				const len = try self.readUntilDelimiters(&token_buf, &[_]u8{'\n', '\t', ' ', '*'});
+				const len = try self.readUntilDelimiters(&token_buf, &[_]u8{'\n', '\t', ' ', '*', '\\'});
 				var tag = token_buf[0..len];
 				log.debug("tag '{s}'", .{ tag });
 
@@ -131,7 +136,7 @@ pub fn Lexer(comptime ReaderType: type) type {
 					try self.stack.append(.{ .tag = id });
 					return .{ .tag_open = id };
 				} else { // End tag like `\w*` or '\*';
-					if (self.stack.items[self.stack.items.len - 1] == .attribute) _ = self.stack.pop();
+					if (self.inAttribute()) _ = self.stack.pop();
 
 					var id: TagType = 0;
 					if (tag.len > 1) {
@@ -157,7 +162,7 @@ pub fn Lexer(comptime ReaderType: type) type {
 					const last = self.stack.pop().tag; // TODO: disallow popping inline tags
 					return .{ .tag_close = last };
 				}
-			} else if (self.stack.items.len > 0 and self.stack.items[self.stack.items.len - 1] == .attribute) {
+			} else if (self.inAttribute()) {
 				var key_len = try self.readUntilDelimiters(token_buf[1..], &[_]u8{'\n', '=', '\\', ' '});
 				const key = token_buf[0..key_len + 1];
 				log.debug("key '{s}'", .{ key });
@@ -208,7 +213,9 @@ pub fn lexer(allocator: Allocator, reader: anytype) !Lexer(@TypeOf(reader)) {
 }
 
 test "single simple tag" {
-	const usfm = "\\id GEN EN_ULT en_English_ltr";
+	const usfm = 
+		\\\id GEN EN_ULT en_English_ltr
+		;
 	var stream = std.io.fixedBufferStream(usfm);
 	var reader = stream.reader();
 	var lex = try lexer(std.testing.allocator, reader);
@@ -259,8 +266,22 @@ test "single attribute tag" {
 	try std.testing.expectEqual(@as(?Token, null), try lex.nextToken());
 }
 
+test "self closing tag" {
+	const usfm = \\\zaln-s hello\*
+		;
+	var stream = std.io.fixedBufferStream(usfm);
+	var reader = stream.reader();
+	var lex = try lexer(std.testing.allocator, reader);
+	defer lex.deinit();
+
+	try std.testing.expectEqual(Token { .tag_open = 1 }, (try lex.nextToken()).?);
+	try std.testing.expectEqualStrings("hello", (try lex.nextToken()).?.text);
+	try std.testing.expectEqual(Token { .tag_close = 1 }, (try lex.nextToken()).?);
+	try std.testing.expectEqualStrings("\n", (try lex.nextToken()).?.text);
+	try std.testing.expectEqual(@as(?Token, null), try lex.nextToken());
+}
+
 test "full line" {
- 	std.testing.log_level = .debug;
 	const usfm = \\\v 1 \zaln-s |x-strong="b:H7225" x-morph="He,R:Ncfsa"\*\w In\w*
 		;
 	var stream = std.io.fixedBufferStream(usfm);
@@ -286,4 +307,19 @@ test "full line" {
 	try std.testing.expectEqual(Token { .tag_close = 1 }, (try lex.nextToken()).?);
 
 	try std.testing.expectEqual(@as(?Token, null), try lex.nextToken());
+}
+
+test "full file" {
+	std.testing.log_level = .debug;
+
+	var file = try std.fs.cwd().openFile("../en_ult/01-GEN.usfm", .{});
+	defer file.close();
+	var reader = file.reader();
+	var lex = try lexer(std.testing.allocator, reader);
+	defer lex.deinit();
+
+	var tok = try lex.nextToken();
+	while (tok != null) {
+		tok = try lex.nextToken();
+	}
 }
