@@ -35,18 +35,6 @@ pub const Parser = struct {
         self.stack.deinit();
     }
 
-    fn maybeParseText(self: *Self, text: *std.ArrayList(u8)) !void {
-        // This is needed because there are multiple places text can appear.
-        // \element text1 \w word\w* text2 \zaln-s\* text3
-        if (try self.lexer.peek()) |maybe_text| {
-            if (maybe_text == .text) {
-                try text.appendSlice(maybe_text.text);
-                log.debug("text {s}", .{text.items});
-                _ = try self.lexer.next();
-            }
-        }
-    }
-
     // Otherwise we'll need a decent bit of look-ahead to support multiline inline tags
     // \v 1 Hello
     // \f this an inline child of v1 or a sibling? idk unless i parse all this \f*
@@ -161,6 +149,25 @@ pub const Parser = struct {
         return null;
     }
 
+    fn addMaybeChildText(self: *Self, children: *std.ArrayList(Element)) !void {
+        if (try self.lexer.peek()) |maybe_token| {
+            switch (maybe_token) {
+                .text => |t| {
+                    _ = try self.lexer.next();
+                    var child_text = try self.allocator.dupe(u8, t);
+                    errdefer self.allocator.free(child_text);
+                    try children.append(Element{
+                        .tag = "text",
+                        .text = child_text,
+                        .attributes = &.{},
+                        .children = &.{},
+                    });
+                },
+                else => {},
+            }
+        }
+    }
+
     // Caller owns returned element and should call `.deinit`
     pub fn next(self: *Self) !?Element {
         var text = std.ArrayList(u8).init(self.allocator);
@@ -174,12 +181,31 @@ pub const Parser = struct {
         const tag = try self.expectTag(true) orelse return null;
         try self.stack.append(tag);
 
-        try self.maybeParseText(&text);
+        if (try self.lexer.peek()) |maybe_text| {
+            if (maybe_text == .text) {
+                try text.appendSlice(maybe_text.text);
+                log.debug("text {s}", .{text.items});
+                _ = try self.lexer.next();
+            }
+        }
 
-        while (try self.lexer.peek()) |maybe_inline| {
-            if (maybe_inline != .tag_open or !self.isInline(maybe_inline.tag_open)) break;
-            try children.append((try self.next()).?);
-            try self.maybeParseText(&text);
+        while (try self.lexer.peek()) |maybe_child| {
+            switch (maybe_child) {
+                .tag_open => |t| {
+                    if (self.isInline(t)) {
+                        try children.append((try self.next()).?);
+                    } else {
+                        break;
+                    }
+                },
+                .text => {
+                    try self.addMaybeChildText(&children);
+                },
+                else => {
+                    log.debug("break", .{});
+                    break;
+                },
+            }
         }
 
         if (self.isInline(tag)) brk: {
@@ -215,7 +241,7 @@ pub const Parser = struct {
                 return Error.InvalidClosingTag;
             }
         } else {
-            try self.maybeParseText(&text);
+            try self.addMaybeChildText(&children);
         }
 
         return Element{
@@ -318,7 +344,7 @@ test "milestones" {
     defer ele.deinit(testing.allocator);
 
     try testing.expectEqualStrings("v", ele.tag);
-    try testing.expectEqualStrings("1 there", ele.text);
+    try testing.expectEqualStrings("1 ", ele.text);
 
     const zalns = ele.children[0];
     try testing.expectEqualStrings("zaln-s", zalns.tag);
@@ -330,6 +356,10 @@ test "milestones" {
     const zalne = ele.children[2];
     try testing.expectEqualStrings("zaln-e", zalne.tag);
 
+    const text = ele.children[3];
+    try testing.expectEqualStrings("text", text.tag);
+    try testing.expectEqualStrings("there", text.text);
+
     try testing.expectEqual(@as(?Element, null), try parser.next());
 }
 
@@ -338,15 +368,16 @@ test "line breaks" {
         \\\v 1 \w In\w*
         \\\w the\w*
         \\\w beginning\w*
+        \\textnode
     ;
     var parser = try Parser.init(testing.allocator, usfm);
     defer parser.deinit();
 
     const ele = (try parser.next()).?;
     defer ele.deinit(testing.allocator);
-    try ele.print(std.io.getStdErr().writer());
+    // try ele.print(std.io.getStdErr().writer());
 
     try testing.expectEqualStrings("v", ele.tag);
     try testing.expectEqualStrings("1 ", ele.text);
-    try testing.expectEqual(@as(usize, 3), ele.children.len);
+    try testing.expectEqual(@as(usize, 4), ele.children.len);
 }
