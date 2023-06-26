@@ -22,7 +22,7 @@ rules = r"""
     value          =  /"[^\"]*"/ ;
 
     text           =  /[^\\\\|]*/ ;
-    ws             =  " " | "\t" | "\n" ;
+    ws             =  /\s*/ ;
     tag_id         =  /[A-Za-z][A-Za-z0-9-]*/ ;
     backslash      =  "\\" ;
     pipe           =  "|" ;
@@ -76,8 +76,10 @@ def self_closing_attributes(grammar):
     text = """
     \\v 1
     \\zaln-s |x-strong="b"\\*
+    \\w hello \\w*
+    \\zaln-e\\*
     """
-    grammar.parse(text)
+    print(grammar.parse(text))
 
 def full_text(grammar):
     with open('../en_ult/01-GEN.usfm', 'r') as f:

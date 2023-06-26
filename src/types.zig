@@ -7,7 +7,7 @@ pub const Token = union(enum) {
     const Self = @This();
 
     tag_open: TagType,
-    text: []u8,
+    text: []const u8,
     attribute_start: void,
     attribute: Attribute,
     tag_close: TagType,
@@ -23,31 +23,36 @@ pub const Token = union(enum) {
 pub const Element = struct {
     tag: []const u8,
     text: []const u8,
-    inline_elements: []InlineElement,
-
-    const Self = @This();
-    pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
-        // This is needed because there are really two places text can appear.
-        // \element text1 \w word\w* text2
-        allocator.free(self.text);
-        allocator.free(self.inline_elements);
-    }
-};
-pub const InlineElement = struct {
-    tag: []const u8,
-    text: []const u8,
     attributes: []Attribute,
-    inline_elements: []InlineElement,
+    children: []Element,
 
     const Self = @This();
     pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
-        // This is needed because there are really two places text can appear.
-        // \w word \zaln-s\* word2 \w*
         allocator.free(self.text);
         allocator.free(self.attributes);
-        allocator.free(self.inline_elements);
+        for (self.children) |c| c.deinit(allocator);
+        allocator.free(self.children);
+    }
+
+    fn print2(self: Self, writer: anytype, depth: usize) !void {
+        const tab = "  ";
+        for (0..depth) |_| try writer.writeAll(tab);
+        try writer.print("{s} {s}", .{ self.tag, self.text });
+
+        for (0..depth) |_| try writer.writeAll(tab);
+        for (self.attributes) |a| try writer.print(" {s}={s}", .{ a.key, a.val });
+
+        for (self.children) |c| {
+            try writer.writeByte('\n');
+            try c.print2(writer, depth + 1);
+        }
+    }
+
+    pub fn print(self: Self, writer: anytype) !void {
+        try self.print2(writer, 0);
     }
 };
+
 pub const Attribute = struct {
     key: []const u8,
     val: []const u8,
