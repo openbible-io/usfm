@@ -18,6 +18,13 @@ fn getText(text: []const u8) []const u8 {
     return res;
 }
 
+fn getNumber(text: []const u8) []const u8 {
+    for (text, 0..) |c, i| {
+        if (c < '0' or c > '9') return text[0..i];
+    }
+    return "";
+}
+
 fn trimWhitespace(text: []const u8) []const u8 {
     return std.mem.trim(u8, text, whitespace);
 }
@@ -85,10 +92,12 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
         for (ele.children) |child| {
             // We only care about verses and breaks
             if (isVerse(child)) {
+                const inner = getText(try child.innerText(allocator));
+                const number = getNumber(inner);
                 try children.append(Child{
                     .type = tagName(child.tag),
-                    .text = getText((try child.innerText(allocator))[child.text.len..]),
-                    .number = if (std.mem.eql(u8, "v", child.tag)) child.text else null,
+                    .text = getText(inner[number.len..]),
+                    .number = if (std.mem.eql(u8, "v", child.tag)) number else null,
                     .footnote = if (child.footnote()) |f| getText(try f.footnoteInnerText(allocator)) else null,
                 });
             } else if (isBr(child)) {
