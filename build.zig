@@ -12,12 +12,19 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(lib);
 
+    const clap_dep = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const clap = clap_dep.module("clap");
+
     const exe = b.addExecutable(.{
         .name = "usfm",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
     });
+    exe.addModule("clap", clap);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

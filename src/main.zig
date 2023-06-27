@@ -1,4 +1,5 @@
 const std = @import("std");
+const clap = @import("clap");
 const Parser = @import("./lib.zig").Parser;
 
 pub const std_options = struct {
@@ -19,7 +20,7 @@ fn trimWhitespace(text: []const u8) []const u8 {
     return std.mem.trim(u8, text, whitespace);
 }
 
-fn parseFile(fname: []const u8) !void {
+fn parseFile(outdir: []const u8, fname: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -27,7 +28,12 @@ fn parseFile(fname: []const u8) !void {
     var file = try std.fs.cwd().openFile(fname, .{});
     defer file.close();
 
-    const outname = try std.fmt.allocPrint(allocator, "{s}.json", .{std.fs.path.stem(fname)});
+    try std.fs.cwd().makePath(outdir);
+    const outname = try std.fmt.allocPrint(allocator, "{s}{c}{s}.json", .{
+        outdir,
+        std.fs.path.sep,
+        std.fs.path.stem(fname),
+    });
     defer allocator.free(outname);
 
     std.debug.print("{s} -> {s}\n", .{ fname, outname });
@@ -74,14 +80,24 @@ fn parseFile(fname: []const u8) !void {
 }
 
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    const params = comptime clap.parseParamsComptime(
+        \\-h, --help              Display this help and exit
+        \\-o, --output-dir <str>  Parsed json output path
+        \\<str>...                USFM files to parse
+        \\
+    );
+    var diag = clap.Diagnostic{};
+    var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
+        .diagnostic = &diag,
+    }) catch |err| {
+        diag.report(std.io.getStdErr().writer(), err) catch {};
+        return err;
+    };
+    defer res.deinit();
 
-    if (args.len < 2) {
-        std.debug.print("usage: {s} <FILE>...\n", .{args[0]});
-        std.os.exit(1);
-    }
+    if (res.args.help != 0)
+        return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
 
-    for (0..args.len - 1) |i| try parseFile(args[i + 1]);
+    const outdir = res.args.@"output-dir" orelse ".";
+    for (res.positionals) |fname| try parseFile(outdir, fname);
 }

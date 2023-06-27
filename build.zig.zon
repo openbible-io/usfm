@@ -1,0 +1,10 @@
+.{
+	.name = "usfm",
+	.version = "0.0.1",
+	.dependencies = .{
+		.clap = .{
+			.url = "https://github.com/Hejsil/zig-clap/archive/a1b7a7301b0006bb4c8daaaf5ade8a6df8ec13ae.tar.gz",
+			.hash = "12205aeff59f41f96033d280471730c171c9a825d8758743249bed834e1590f593e3",
+		},
+	}
+}
