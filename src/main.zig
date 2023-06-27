@@ -41,11 +41,6 @@ fn isBr(c: Element) bool {
     return std.mem.eql(u8, "p", c.tag);
 }
 
-const Chapter = struct {
-    number: u8,
-    children: []Child,
-};
-
 const Child = struct {
     type: []const u8,
     text: ?[]const u8 = null,
@@ -67,22 +62,9 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
     var file = try std.fs.cwd().openFile(fname, .{});
     defer file.close();
 
-    try std.fs.cwd().makePath(outdir);
-    const outname = try std.fmt.allocPrint(allocator, "{s}{c}{s}.json", .{
-        outdir,
-        std.fs.path.sep,
-        std.fs.path.stem(fname),
-    });
-
-    std.debug.print("{s} -> {s}\n", .{ fname, outname });
-
-    var outfile = try std.fs.cwd().createFile(outname, .{});
-    defer outfile.close();
-
     const usfm = try file.readToEndAlloc(allocator, 4 * 1_000_000_000);
     var parser = try Parser.init(allocator, usfm);
 
-    var chapters = std.ArrayList(Chapter).init(allocator);
     while (try parser.next()) |ele| {
         var children = std.ArrayList(Child).init(allocator);
         // try ele.print(std.io.getStdErr().writer());
@@ -106,23 +88,25 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
                 });
             }
         }
-        const chapter_number = trimWhitespace(ele.text);
-        try chapters.append(Chapter{
-            .number = std.fmt.parseInt(u8, chapter_number, 10) catch {
-                log.err("could not parse chapter number {s}", .{chapter_number});
-                std.os.exit(2);
+        const chapter_number = std.fmt.parseInt(u8, trimWhitespace(ele.text), 10) catch {
+            log.err("could not parse chapter number {s}", .{trimWhitespace(ele.text)});
+            std.os.exit(2);
+        };
+
+        const outname = try std.fmt.allocPrint(allocator, "{1s}{0c}{2s}{0c}{3d:0>3}.json", .{ std.fs.path.sep, outdir, std.fs.path.stem(fname), chapter_number });
+        std.debug.print("{s} -> {s}\n", .{ fname, outname });
+        try std.fs.cwd().makePath(std.fs.path.dirname(outname).?);
+        var outfile = try std.fs.cwd().createFile(outname, .{});
+        defer outfile.close();
+        try std.json.stringify(
+            children.items,
+            .{
+                .emit_null_optional_fields = false,
+                .whitespace = .{ .indent = .tab, .separator = true },
             },
-            .children = children.items,
-        });
+            outfile.writer(),
+        );
     }
-    try std.json.stringify(
-        chapters.items,
-        .{
-            .emit_null_optional_fields = false,
-            .whitespace = .{ .indent = .tab, .separator = true },
-        },
-        outfile.writer(),
-    );
 }
 
 pub fn main() !void {
