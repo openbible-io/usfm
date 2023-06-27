@@ -120,6 +120,11 @@ pub const Parser = struct {
         return false;
     }
 
+    fn isFootnote(self: Self, tag_id: TagType) bool {
+        const tag = self.lexer.tokens.items[tag_id];
+        return std.mem.eql(u8, "f", tag);
+    }
+
     fn printErr(self: *Self, pos: usize, comptime fmt: []const u8, args: anytype) void {
         var lineno: usize = 0;
         var lineno_pos: usize = 0;
@@ -176,9 +181,13 @@ pub const Parser = struct {
         var attributes = std.ArrayList(Attribute).init(allocator);
         errdefer attributes.deinit();
         var children = std.ArrayList(Element).init(allocator);
-        errdefer children.deinit();
+        errdefer {
+            for (children.items) |c| c.deinit(allocator);
+            children.deinit();
+        }
 
         const tag = try self.expectTag(true) orelse return null;
+        const is_footnote = self.isFootnote(tag);
         try self.stack.append(tag);
 
         if (try self.lexer.peek()) |maybe_text| {
@@ -192,7 +201,7 @@ pub const Parser = struct {
         while (try self.lexer.peek()) |maybe_child| {
             switch (maybe_child) {
                 .tag_open => |t| {
-                    if (self.isInline(t)) {
+                    if (self.isInline(t) or is_footnote) {
                         try children.append((try self.next()).?);
                     } else {
                         break;
@@ -201,10 +210,7 @@ pub const Parser = struct {
                 .text => {
                     try self.addMaybeChildText(&children);
                 },
-                else => {
-                    log.debug("break", .{});
-                    break;
-                },
+                else => break,
             }
         }
 
@@ -379,5 +385,55 @@ test "line breaks" {
 
     try testing.expectEqualStrings("v", ele.tag);
     try testing.expectEqualStrings("1 ", ele.text);
-    try testing.expectEqual(@as(usize, 4), ele.children.len);
+    try testing.expectEqualStrings("In", ele.children[0].text);
+    try testing.expectEqualStrings("\n", ele.children[1].text);
+    try testing.expectEqualStrings("the", ele.children[2].text);
+    try testing.expectEqualStrings("\n", ele.children[3].text);
+    try testing.expectEqualStrings("beginning", ele.children[4].text);
+    try testing.expectEqualStrings("\ntextnode", ele.children[5].text);
+}
+
+test "footnote with inline fqa" {
+    const usfm =
+        \\\v 2
+        \\\f + \ft footnote: \fqa …because I, Yahweh your God, am holy\fqa*.\f*
+    ;
+
+    var parser = try Parser.init(testing.allocator, usfm);
+    defer parser.deinit();
+
+    const ele = (try parser.next()).?;
+    defer ele.deinit(testing.allocator);
+    // try ele.print(std.io.getStdErr().writer());
+
+    try testing.expectEqualStrings("v", ele.tag);
+    try testing.expectEqualStrings("2\n", ele.text);
+
+    const footnote = ele.children[0];
+    try testing.expectEqualStrings("f", footnote.tag);
+    try testing.expectEqualStrings("+ ", footnote.text);
+
+    const ft = footnote.children[0];
+    try testing.expectEqualStrings("ft", ft.tag);
+    try testing.expectEqualStrings("footnote: ", ft.text);
+    try testing.expectEqualStrings("fqa", ft.children[0].tag);
+    try testing.expectEqualStrings("text", ft.children[1].tag);
+    try testing.expectEqualStrings(".", ft.children[1].text);
+
+    const footnote2 = ele.footnote().?;
+    try testing.expectEqualStrings("f", footnote2.tag);
+    try testing.expectEqualStrings("+ ", footnote2.text);
+}
+
+test "footnote with block fqa" {
+    const usfm =
+        \\\v 1 \f + \fq until they had crossed over \ft or perhaps \fqa until we had crossed over \ft (Hebrew Ketiv).\f*
+    ;
+
+    var parser = try Parser.init(testing.allocator, usfm);
+    defer parser.deinit();
+
+    const ele = (try parser.next()).?;
+    defer ele.deinit(testing.allocator);
+    try ele.print(std.io.getStdErr().writer());
 }

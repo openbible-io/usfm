@@ -51,6 +51,41 @@ pub const Element = struct {
     pub fn print(self: Self, writer: anytype) !void {
         try self.print2(writer, 0);
     }
+
+    pub fn isFootnote(self: Self) bool {
+        return std.mem.eql(u8, self.tag, "f");
+    }
+
+    fn innerText2(
+        self: Self,
+        allocator: std.mem.Allocator,
+        acc: *std.ArrayList(u8),
+        comptime include_footnotes: bool,
+    ) !void {
+        if (self.isFootnote() and !include_footnotes) return;
+        try acc.appendSlice(self.text);
+        for (self.children) |c| try c.innerText2(allocator, acc, include_footnotes);
+    }
+
+    // Caller owns returned string.
+    pub fn innerText(self: Self, allocator: std.mem.Allocator) ![]const u8 {
+        var acc = std.ArrayList(u8).init(allocator);
+        try self.innerText2(allocator, &acc, false);
+        return acc.toOwnedSlice();
+    }
+
+    // Caller owns returned string.
+    pub fn footnoteInnerText(self: Self, allocator: std.mem.Allocator) ![]const u8 {
+        var acc = std.ArrayList(u8).init(allocator);
+        try self.innerText2(allocator, &acc, true);
+        return acc.toOwnedSlice();
+    }
+
+    pub fn footnote(self: Self) ?Element {
+        if (self.isFootnote()) return self;
+        for (self.children) |c| if (c.footnote()) |f| return f;
+        return null;
+    }
 };
 
 pub const Attribute = struct {

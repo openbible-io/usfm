@@ -7,6 +7,13 @@ const TagType = types.TagType;
 const Token = types.Token;
 const log = types.log;
 
+fn isWhitespace(c: u8) bool {
+    return switch (c) {
+        ' ', '\t', '\n' => true,
+        else => false,
+    };
+}
+
 pub const Lexer = struct {
     const Self = @This();
     const TokenIds = std.StringHashMap(TagType);
@@ -79,29 +86,33 @@ pub const Lexer = struct {
         return val;
     }
 
-    pub fn eatSpace(self: *Self) !void {
-        var byte = self.readByte() catch return;
-        // log.debug("ate '{c}'", .{ byte });
-        while (byte == ' ' or byte == '\t' or byte == '\n') {
-            byte = self.readByte() catch return;
-            // log.debug("ate '{c}'", .{ byte });
+    fn eatSpaceN(self: *Self, n: usize) !void {
+        var n_eaten: usize = 0;
+        while (n_eaten <= n) {
+            switch (self.readByte() catch return) {
+                ' ', '\t', '\n' => n_eaten += 1,
+                else => break,
+            }
         }
-        // log.debug("put back '{c}'", .{ byte });
+        // Spit back out last byte.
         self.pos -= 1;
     }
 
+    fn eatSpace(self: *Self) !void {
+        try self.eatSpaceN(1_000_000);
+    }
+
     pub fn next(self: *Self) !?Token {
-        try self.eatSpace();
         const token_start = self.pos;
         const next_c = self.readByte() catch |err| {
             return if (err == error.EndOfStream) null else err;
         };
         if (next_c == '\\') {
             const len = try self.readUntilDelimiters(&[_]u8{ '\n', '\t', ' ', '*', '\\' });
-            try self.eatSpace();
             var tag = self.buffer[token_start + 1 .. token_start + len];
 
             if (tag[tag.len - 1] != '*') {
+                try self.eatSpaceN(1);
                 log.debug("open tag '{s}'", .{tag});
                 const id = try self.getOrPut(tag, @intCast(TagType, self.token_ids.count()));
                 return .{ .tag_open = id };
@@ -291,9 +302,13 @@ test "line breaks" {
     try testing.expectEqualStrings("In", (try lex.next()).?.text);
     try testing.expectEqual(Token{ .tag_close = 2 }, (try lex.next()).?);
 
+    try testing.expectEqualStrings("\n", (try lex.next()).?.text);
+
     try testing.expectEqual(Token{ .tag_open = 2 }, (try lex.next()).?);
     try testing.expectEqualStrings("the", (try lex.next()).?.text);
     try testing.expectEqual(Token{ .tag_close = 2 }, (try lex.next()).?);
+
+    try testing.expectEqualStrings("\n", (try lex.next()).?.text);
 
     try testing.expectEqual(Token{ .tag_open = 2 }, (try lex.next()).?);
     try testing.expectEqualStrings("beginning", (try lex.next()).?.text);
