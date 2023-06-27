@@ -1,6 +1,8 @@
 const std = @import("std");
 const clap = @import("clap");
 const Parser = @import("./lib.zig").Parser;
+const Element = @import("./lib.zig").Element;
+const log = @import("./types.zig").log;
 
 pub const std_options = struct {
     pub const log_level: std.log.Level = .warn;
@@ -20,6 +22,36 @@ fn trimWhitespace(text: []const u8) []const u8 {
     return std.mem.trim(u8, text, whitespace);
 }
 
+fn isVerse(c: Element) bool {
+    return std.mem.eql(u8, "v", c.tag);
+}
+
+fn isChapter(c: Element) bool {
+    return std.mem.eql(u8, "c", c.tag);
+}
+
+fn isBr(c: Element) bool {
+    return std.mem.eql(u8, "p", c.tag);
+}
+
+const Chapter = struct {
+    number: u8,
+    children: []Child,
+};
+
+const Child = struct {
+    type: []const u8,
+    text: ?[]const u8 = null,
+    number: ?[]const u8 = null,
+    footnote: ?[]const u8 = null,
+};
+
+fn tagName(usfm_name: []const u8) []const u8 {
+    if (std.mem.eql(u8, "v", usfm_name)) return "verse";
+    if (std.mem.eql(u8, "p", usfm_name)) return "br";
+    return usfm_name;
+}
+
 fn parseFile(outdir: []const u8, fname: []const u8) !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -34,7 +66,6 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
         std.fs.path.sep,
         std.fs.path.stem(fname),
     });
-    defer allocator.free(outname);
 
     std.debug.print("{s} -> {s}\n", .{ fname, outname });
 
@@ -42,41 +73,47 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
     defer outfile.close();
 
     const usfm = try file.readToEndAlloc(allocator, 4 * 1_000_000_000);
-    defer allocator.free(usfm);
-
     var parser = try Parser.init(allocator, usfm);
-    defer parser.deinit();
 
-    var first_verse_written = false;
-    var writer = outfile.writer();
-    try writer.writeAll("[\n");
+    var chapters = std.ArrayList(Chapter).init(allocator);
     while (try parser.next()) |ele| {
-        defer ele.deinit(allocator);
-
+        var children = std.ArrayList(Child).init(allocator);
         // try ele.print(std.io.getStdErr().writer());
-        if (std.mem.eql(u8, ele.tag, "v")) {
-            first_verse_written = true;
+        // We only care about chapters
+        if (!isChapter(ele)) continue;
 
-            const inner_text = try ele.innerText(allocator);
-            defer allocator.free(inner_text);
-
-            const footnote_text = if (ele.footnote()) |f| try f.footnoteInnerText(allocator) else try allocator.alloc(u8, 0);
-            defer allocator.free(footnote_text);
-
-            try std.json.stringify(.{
-                .type = "verse",
-                .number = trimWhitespace(ele.text),
-                .text = getText(inner_text[ele.text.len..]),
-                .footnote = if (footnote_text.len == 0) null else trimWhitespace(footnote_text),
-            }, .{ .emit_null_optional_fields = false }, writer);
-            try writer.writeAll(",\n");
-        } else if (std.mem.eql(u8, ele.tag, "p") and first_verse_written) {
-            try std.json.stringify(.{ .type = "br" }, .{}, writer);
-            try writer.writeAll(",\n");
+        for (ele.children) |child| {
+            // We only care about verses and breaks
+            if (isVerse(child)) {
+                try children.append(Child{
+                    .type = tagName(child.tag),
+                    .text = getText((try child.innerText(allocator))[child.text.len..]),
+                    .number = if (std.mem.eql(u8, "v", child.tag)) child.text else null,
+                    .footnote = if (child.footnote()) |f| getText(try f.footnoteInnerText(allocator)) else null,
+                });
+            } else if (isBr(child)) {
+                try children.append(Child{
+                    .type = tagName(child.tag),
+                });
+            }
         }
+        const chapter_number = trimWhitespace(ele.text);
+        try chapters.append(Chapter{
+            .number = std.fmt.parseInt(u8, chapter_number, 10) catch {
+                log.err("could not parse chapter number {s}", .{chapter_number});
+                std.os.exit(2);
+            },
+            .children = children.items,
+        });
     }
-    try outfile.seekBy(-2);
-    try writer.writeAll("\n]");
+    try std.json.stringify(
+        chapters.items,
+        .{
+            .emit_null_optional_fields = false,
+            .whitespace = .{ .indent = .tab, .separator = true },
+        },
+        outfile.writer(),
+    );
 }
 
 pub fn main() !void {

@@ -12,11 +12,12 @@ pub const Token = union(enum) {
     attribute: Attribute,
     tag_close: TagType,
 
-    pub fn print(self: Self) void {
-        switch (self) {
-            .text => |t| log.debug("token '{s}'", .{t}),
-            else => |t| log.debug("token {any}", .{t}),
-        }
+    // Caller owns returned string
+    pub fn toString(self: Self, allocator: std.mem.Allocator) ![]const u8 {
+        return switch (self) {
+            .text => |t| std.fmt.allocPrint(allocator, "Token {{ .text = {s} }}", .{t}),
+            else => |t| std.fmt.allocPrint(allocator, "{any}", .{t}),
+        };
     }
 };
 

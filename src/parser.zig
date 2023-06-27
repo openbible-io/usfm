@@ -38,8 +38,8 @@ pub const Parser = struct {
     // Otherwise we'll need a decent bit of look-ahead to support multiline inline tags
     // \v 1 Hello
     // \f this an inline child of v1 or a sibling? idk unless i parse all this \f*
-    fn isInline(self: Self, tag_id: TagType) bool {
-        const tag = self.lexer.tokens.items[tag_id];
+    pub fn isInline(self: Self, tag_id: TagType) bool {
+        const tag = self.tagName(tag_id);
         for ([_][]const u8{
             // # Words and characters
             // ## Special text
@@ -110,7 +110,7 @@ pub const Parser = struct {
             "iqt",
         }) |t| if (std.mem.eql(u8, tag, t)) return true;
 
-        // We should check for \d+-[se], but I'm lazy
+        // Milestones
         for ([_][]const u8{
             "qt",
             "ts",
@@ -121,12 +121,26 @@ pub const Parser = struct {
     }
 
     fn canHaveChildren(self: Self, tag_id: TagType) bool {
-        const tag = self.lexer.tokens.items[tag_id];
+        const tag = self.tagName(tag_id);
         for ([_][]const u8{
+            "c",
             "v",
             "f",
         }) |t| if (std.mem.eql(u8, tag, t)) return true;
         return false;
+    }
+
+    fn tagName(self: Self, tag_id: TagType) []const u8 {
+        return self.lexer.tokens.items[tag_id];
+    }
+
+    fn level(self: Self, tag_id: TagType) u8 {
+        const tag = self.tagName(tag_id);
+        if (std.mem.eql(u8, tag, "c")) return 0;
+        if (std.mem.eql(u8, tag, "v")) return 1;
+        if (std.mem.eql(u8, tag, "f")) return 2;
+        if (self.isInline(tag_id)) return 4;
+        return 3;
     }
 
     fn printErr(self: *Self, pos: usize, comptime fmt: []const u8, args: anytype) void {
@@ -147,10 +161,17 @@ pub const Parser = struct {
     }
 
     fn expectTag(self: *Self, comptime is_open: bool) !?TagType {
+        try self.lexer.eatSpace();
         const err_pos = self.lexer.pos;
         if (try self.lexer.next()) |maybe_tag| {
             if (maybe_tag != if (comptime is_open) .tag_open else .tag_close) {
-                self.printErr(err_pos, "expected {s}ing tag, got {any}", .{ if (comptime is_open) "open" else "clos", maybe_tag });
+                const tag_string = try maybe_tag.toString(self.allocator);
+                defer self.allocator.free(tag_string);
+                self.printErr(
+                    err_pos,
+                    "expected {s}ing tag, got {s}",
+                    .{ if (comptime is_open) "open" else "clos", tag_string },
+                );
                 return null;
             }
             return if (comptime is_open) maybe_tag.tag_open else maybe_tag.tag_close;
@@ -204,8 +225,11 @@ pub const Parser = struct {
         while (try self.lexer.peek()) |maybe_child| {
             switch (maybe_child) {
                 .tag_open => |t| {
-                    // Consume greedily
-                    if (self.canHaveChildren(tag) or self.isInline(t)) {
+                    log.debug("tag {s} maybe_child {s}", .{ self.lexer.tokens.items[tag], self.lexer.tokens.items[t] });
+                    if ((self.canHaveChildren(tag) or self.isInline(tag) or self.isInline(t)) // Only allow expected children
+                    and self.level(tag) < self.level(t) // Prevent duplicate tags from nesting
+                    ) {
+                        log.debug("is child", .{});
                         try children.append((try self.next()).?);
                     } else {
                         break;
@@ -438,19 +462,77 @@ test "header" {
 
     const ele = (try parser.next()).?;
     defer ele.deinit(testing.allocator);
-
     try testing.expectEqualStrings("mt", ele.tag);
     try testing.expectEqualStrings("Genesis\n\n", ele.text);
 
-    try testing.expectEqualStrings("ts", ele.children[0].tag);
-    try testing.expectEqualStrings("text", ele.children[1].tag);
-    try testing.expectEqualStrings("\n", ele.children[1].text);
+    const ele1 = ele.children[0];
+    defer ele1.deinit(testing.allocator);
+    try testing.expectEqualStrings("ts", ele1.tag);
 
     const ele2 = (try parser.next()).?;
     defer ele2.deinit(testing.allocator);
-
     try testing.expectEqualStrings("c", ele2.tag);
     try testing.expectEqualStrings("1", ele2.text);
+
+    try testing.expectEqual(@as(?Element, null), try parser.next());
+}
+
+test "chapters" {
+    const usfm =
+        \\\c 1
+        \\\v 1 verse1
+        \\\v 2 verse2
+        \\\c 2
+        \\\v 1 asdf
+        \\\v 2 hjkl
+    ;
+
+    var parser = try Parser.init(testing.allocator, usfm);
+    defer parser.deinit();
+
+    const c1 = (try parser.next()).?;
+    defer c1.deinit(testing.allocator);
+    // try c1.print(std.io.getStdErr().writer());
+
+    try testing.expectEqualStrings("c", c1.tag);
+    try testing.expectEqualStrings("1\n", c1.text);
+    try testing.expectEqual(@as(usize, 2), c1.children.len);
+
+    var verse1 = c1.children[0];
+    try testing.expectEqualStrings("v", verse1.tag);
+    try testing.expectEqualStrings("1 verse1\n", verse1.text);
+
+    var verse2 = c1.children[1];
+    try testing.expectEqualStrings("v", verse2.tag);
+    try testing.expectEqualStrings("2 verse2\n", verse2.text);
+
+    const c2 = (try parser.next()).?;
+    defer c2.deinit(testing.allocator);
+    // try c2.print(std.io.getStdErr().writer());
+
+    verse1 = c2.children[0];
+    try testing.expectEqualStrings("v", verse1.tag);
+    try testing.expectEqualStrings("1 asdf\n", verse1.text);
+
+    verse2 = c2.children[1];
+    try testing.expectEqualStrings("v", verse2.tag);
+    try testing.expectEqualStrings("2 hjkl", verse2.text);
+
+    try testing.expectEqual(@as(?Element, null), try parser.next());
+}
+
+test "hanging text" {
+    const usfm =
+        \\\ip Hello
+        \\\bk inline tag\bk* hanging text.
+    ;
+
+    var parser = try Parser.init(testing.allocator, usfm);
+    defer parser.deinit();
+
+    const c1 = (try parser.next()).?;
+    defer c1.deinit(testing.allocator);
+    // try c1.print(std.io.getStdErr().writer());
 
     try testing.expectEqual(@as(?Element, null), try parser.next());
 }
