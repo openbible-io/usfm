@@ -38,6 +38,7 @@ pub const Lexer = struct {
         // Reserve 0 for self-closing tags
         try res.tokens.append("");
         try res.token_ids.put("", 0);
+        try res.eatSpace();
         return res;
     }
 
@@ -98,7 +99,7 @@ pub const Lexer = struct {
         self.pos -= 1;
     }
 
-    fn eatSpace(self: *Self) !void {
+    pub fn eatSpace(self: *Self) !void {
         try self.eatSpaceN(1_000_000);
     }
 

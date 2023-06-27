@@ -120,9 +120,13 @@ pub const Parser = struct {
         return false;
     }
 
-    fn isFootnote(self: Self, tag_id: TagType) bool {
+    fn canHaveChildren(self: Self, tag_id: TagType) bool {
         const tag = self.lexer.tokens.items[tag_id];
-        return std.mem.eql(u8, "f", tag);
+        for ([_][]const u8{
+            "v",
+            "f",
+        }) |t| if (std.mem.eql(u8, tag, t)) return true;
+        return false;
     }
 
     fn printErr(self: *Self, pos: usize, comptime fmt: []const u8, args: anytype) void {
@@ -187,7 +191,6 @@ pub const Parser = struct {
         }
 
         const tag = try self.expectTag(true) orelse return null;
-        const is_footnote = self.isFootnote(tag);
         try self.stack.append(tag);
 
         if (try self.lexer.peek()) |maybe_text| {
@@ -201,53 +204,33 @@ pub const Parser = struct {
         while (try self.lexer.peek()) |maybe_child| {
             switch (maybe_child) {
                 .tag_open => |t| {
-                    if (self.isInline(t) or is_footnote) {
+                    // Consume greedily
+                    if (self.canHaveChildren(tag) or self.isInline(t)) {
                         try children.append((try self.next()).?);
                     } else {
                         break;
                     }
                 },
-                .text => {
-                    try self.addMaybeChildText(&children);
-                },
+                .text => try self.addMaybeChildText(&children),
                 else => break,
             }
         }
 
-        if (self.isInline(tag)) brk: {
-            if (try self.lexer.peek()) |maybe_attributes| {
-                if (maybe_attributes == .attribute_start) {
-                    _ = try self.lexer.next();
-                    while (try self.lexer.peek()) |maybe_attr| {
-                        if (maybe_attr != .attribute) break;
-                        try attributes.append((try self.lexer.next()).?.attribute);
-                    }
+        if (try self.lexer.peek()) |maybe_attributes| {
+            if (maybe_attributes == .attribute_start) {
+                _ = try self.lexer.next();
+                while (try self.lexer.peek()) |maybe_attr| {
+                    if (maybe_attr != .attribute) break;
+                    try attributes.append((try self.lexer.next()).?.attribute);
                 }
             }
+        }
 
-            const closing_tag = try self.expectTag(false) orelse {
-                // log.warn("missing closing tag for {s} at {d}");
-                break :brk;
-            };
-
-            if (self.stack.popOrNull()) |expected| {
-                if (expected != closing_tag and closing_tag != 0) {
-                    log.err("Expected closing tag {s}, not {s} at {d}", .{
-                        self.lexer.tokens.items[expected],
-                        self.lexer.tokens.items[closing_tag],
-                        self.lexer.pos,
-                    });
-                    return Error.InvalidClosingTag;
-                }
-            } else {
-                log.err("Unmatched closing tag {s} at {d}", .{
-                    self.lexer.tokens.items[closing_tag],
-                    self.lexer.pos,
-                });
-                return Error.InvalidClosingTag;
+        if (try self.lexer.peek()) |maybe_close| {
+            if (maybe_close == .tag_close) {
+                _ = try self.expectTag(false);
+                _ = self.stack.popOrNull();
             }
-        } else {
-            try self.addMaybeChildText(&children);
         }
 
         return Element{
@@ -381,7 +364,6 @@ test "line breaks" {
 
     const ele = (try parser.next()).?;
     defer ele.deinit(testing.allocator);
-    // try ele.print(std.io.getStdErr().writer());
 
     try testing.expectEqualStrings("v", ele.tag);
     try testing.expectEqualStrings("1 ", ele.text);
@@ -391,12 +373,14 @@ test "line breaks" {
     try testing.expectEqualStrings("\n", ele.children[3].text);
     try testing.expectEqualStrings("beginning", ele.children[4].text);
     try testing.expectEqualStrings("\ntextnode", ele.children[5].text);
+
+    try testing.expectEqual(@as(?Element, null), try parser.next());
 }
 
 test "footnote with inline fqa" {
     const usfm =
         \\\v 2
-        \\\f + \ft footnote: \fqa …because I, Yahweh your God, am holy\fqa*.\f*
+        \\\f + \ft footnote: \fqa some text\fqa*.\f*
     ;
 
     var parser = try Parser.init(testing.allocator, usfm);
@@ -413,12 +397,16 @@ test "footnote with inline fqa" {
     try testing.expectEqualStrings("f", footnote.tag);
     try testing.expectEqualStrings("+ ", footnote.text);
 
-    const ft = footnote.children[0];
-    try testing.expectEqualStrings("ft", ft.tag);
-    try testing.expectEqualStrings("footnote: ", ft.text);
-    try testing.expectEqualStrings("fqa", ft.children[0].tag);
-    try testing.expectEqualStrings("text", ft.children[1].tag);
-    try testing.expectEqualStrings(".", ft.children[1].text);
+    try testing.expectEqualStrings("ft", footnote.children[0].tag);
+    try testing.expectEqualStrings("footnote: ", footnote.children[0].text);
+
+    try testing.expectEqualStrings("fqa", footnote.children[1].tag);
+    try testing.expectEqualStrings("some text", footnote.children[1].text);
+
+    try testing.expectEqualStrings("text", footnote.children[2].tag);
+    try testing.expectEqualStrings(".", footnote.children[2].text);
+
+    try testing.expectEqual(@as(?Element, null), try parser.next());
 
     const footnote2 = ele.footnote().?;
     try testing.expectEqualStrings("f", footnote2.tag);
@@ -435,5 +423,34 @@ test "footnote with block fqa" {
 
     const ele = (try parser.next()).?;
     defer ele.deinit(testing.allocator);
-    try ele.print(std.io.getStdErr().writer());
+}
+
+test "header" {
+    const usfm =
+        \\\mt Genesis
+        \\
+        \\\ts\*
+        \\\c 1
+    ;
+
+    var parser = try Parser.init(testing.allocator, usfm);
+    defer parser.deinit();
+
+    const ele = (try parser.next()).?;
+    defer ele.deinit(testing.allocator);
+
+    try testing.expectEqualStrings("mt", ele.tag);
+    try testing.expectEqualStrings("Genesis\n\n", ele.text);
+
+    try testing.expectEqualStrings("ts", ele.children[0].tag);
+    try testing.expectEqualStrings("text", ele.children[1].tag);
+    try testing.expectEqualStrings("\n", ele.children[1].text);
+
+    const ele2 = (try parser.next()).?;
+    defer ele2.deinit(testing.allocator);
+
+    try testing.expectEqualStrings("c", ele2.tag);
+    try testing.expectEqualStrings("1", ele2.text);
+
+    try testing.expectEqual(@as(?Element, null), try parser.next());
 }
