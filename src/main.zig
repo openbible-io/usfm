@@ -59,6 +59,7 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
+    std.debug.print("parsing {s}\n", .{fname});
     var file = try std.fs.cwd().openFile(fname, .{});
     defer file.close();
 
@@ -93,8 +94,12 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
             std.os.exit(2);
         };
 
-        const outname = try std.fmt.allocPrint(allocator, "{1s}{0c}{2s}{0c}{3d:0>3}.json", .{ std.fs.path.sep, outdir, std.fs.path.stem(fname), chapter_number });
-        std.debug.print("{s} -> {s}\n", .{ fname, outname });
+        const outname = try std.fmt.allocPrint(allocator, "{1s}{0c}{2s}{0c}{3d:0>3}.json", .{
+            std.fs.path.sep,
+            outdir,
+            std.fs.path.stem(fname),
+            chapter_number,
+        });
         try std.fs.cwd().makePath(std.fs.path.dirname(outname).?);
         var outfile = try std.fs.cwd().createFile(outname, .{});
         defer outfile.close();
@@ -125,7 +130,7 @@ pub fn main() !void {
     };
     defer res.deinit();
 
-    if (res.args.help != 0)
+    if (res.args.help != 0 or res.positionals.len == 0)
         return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
 
     const outdir = res.args.@"output-dir" orelse ".";

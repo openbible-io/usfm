@@ -1,0 +1,27 @@
+{
+  "name": "usfm",
+  "version": "0.0.1",
+  "description": "USFM -> JSON parser",
+  "main": "index.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "zig build test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openbible-io/usfm.git"
+  },
+  "keywords": [
+    "usfm",
+    "bible",
+    "parser"
+  ],
+  "author": "thesmartwon",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/openbible-io/usfm/issues"
+  },
+  "homepage": "https://github.com/openbible-io/usfm#readme"
+}
