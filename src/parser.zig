@@ -130,6 +130,34 @@ pub const Parser = struct {
         return false;
     }
 
+    pub fn isParagraph(tag: []const u8) bool {
+        for ([_][]const u8{
+            "p",
+            "m",
+            "po",
+            "pr",
+            "cls",
+            "pmo",
+            "pm",
+            "pmc",
+            "pmr",
+            "mi",
+            "nb",
+            "pc",
+            "qr",
+            "qc",
+            "qa",
+            "qd",
+        }) |t| if (std.mem.eql(u8, tag, t)) return true;
+
+        for ([_][]const u8{
+            "pi",
+            "ph",
+            "q",
+        }) |t| if (std.mem.startsWith(u8, tag, t)) return true;
+        return false;
+    }
+
     fn tagName(self: Self, tag_id: TagType) []const u8 {
         return self.lexer.tokens.items[tag_id];
     }
@@ -137,7 +165,7 @@ pub const Parser = struct {
     fn level(self: Self, tag_id: TagType) u8 {
         const tag = self.tagName(tag_id);
         if (std.mem.eql(u8, tag, "c")) return 0;
-        if (std.mem.eql(u8, tag, "p")) return 1;
+        if (isParagraph(tag)) return 1;
         if (std.mem.eql(u8, tag, "v")) return 2;
         if (std.mem.eql(u8, tag, "f")) return 3;
         if (!self.isInline(tag_id)) return 4;

@@ -3,6 +3,7 @@ const Parser = @import("./lib.zig").Parser;
 const Element = @import("./lib.zig").Element;
 const log = @import("./types.zig").log;
 
+const Allocator = std.mem.Allocator;
 const whitespace = &[_]u8{ ' ', '\t', '\n' };
 
 fn getText(text: []const u8) []const u8 {
@@ -32,17 +33,35 @@ pub fn isChapter(c: Element) bool {
     return std.mem.eql(u8, "c", c.tag);
 }
 
-fn isBr(c: Element) bool {
-    return std.mem.eql(u8, "p", c.tag);
-}
-
 const Verse = struct {
     text: ?[]const u8 = null,
     number: ?[]const u8 = null,
     footnote: ?[]const u8 = null,
+
+    const Self = @This();
+
+    pub fn isEmpty(self: Self) bool {
+        return self.text == null and self.number == null and self.footnote == null;
+    }
 };
 
-const Paragraph = []Verse;
+const Paragraph = struct {
+    tag: []const u8,
+    verses: []Verse,
+};
+const ParagraphBuilder = struct {
+    tag: []const u8,
+    verses: std.ArrayList(Verse),
+
+    const Self = @This();
+
+    pub fn toParagraph(self: *Self) !Paragraph {
+        return Paragraph{
+            .tag = self.tag,
+            .verses = try self.verses.toOwnedSlice(),
+        };
+    }
+};
 
 fn tagName(usfm_name: []const u8) []const u8 {
     if (std.mem.eql(u8, "v", usfm_name)) return "verse";
@@ -50,27 +69,41 @@ fn tagName(usfm_name: []const u8) []const u8 {
     return usfm_name;
 }
 
-/// Caller owns returned paragraphs.
-pub fn paragraphs(allocator: std.mem.Allocator, chapter: Element) ![]Paragraph {
-    var res = std.ArrayList(Paragraph).init(allocator);
-    var cur = std.ArrayList(Verse).init(allocator);
+fn verse(allocator: Allocator, element: Element) !Verse {
+    const inner = getText(try element.innerText(allocator));
+    const number = getNumber(inner);
+    const text = getText(inner[number.len..]);
+    const footnote = if (element.footnote()) |f| getText(try f.footnoteInnerText(allocator)) else "";
+    return Verse{
+        .text = if (text.len > 0) text else null,
+        .number = if (number.len > 0) number else null,
+        .footnote = if (footnote.len > 0) footnote else null,
+    };
+}
 
-    for (chapter.children) |child| {
-        // We only care about verses and breaks
-        if (isVerse(child)) {
-            const inner = getText(try child.innerText(allocator));
-            const number = getNumber(inner);
-            try cur.append(Verse{
-                .text = getText(inner[number.len..]),
-                .number = if (std.mem.eql(u8, "v", child.tag)) number else null,
-                .footnote = if (child.footnote()) |f| getText(try f.footnoteInnerText(allocator)) else null,
-            });
-        } else if (isBr(child) and cur.items.len > 0) {
-            try res.append(try cur.toOwnedSlice());
-            cur = std.ArrayList(Verse).init(allocator);
+/// Caller owns returned paragraphs.
+pub fn paragraphs(allocator: Allocator, chapter: Element) ![]Paragraph {
+    if (chapter.children.len == 0) return &.{};
+
+    var res = std.ArrayList(Paragraph).init(allocator);
+    var paragraph: ?ParagraphBuilder = null;
+
+    for (chapter.children, 0..) |child, i| {
+        const is_last = i == chapter.children.len - 1;
+        if (Parser.isParagraph(child.tag) or is_last) {
+            if (paragraph) |*p| try res.append(try p.toParagraph());
+            if (!is_last) {
+                paragraph = ParagraphBuilder{
+                    .tag = tagName(child.tag),
+                    .verses = std.ArrayList(Verse).init(allocator),
+                };
+            }
+        }
+        if (paragraph) |*p| {
+            const paragraph_verse = try verse(allocator, child);
+            if (!paragraph_verse.isEmpty()) try p.verses.append(paragraph_verse);
         }
     }
-    if (cur.items.len > 0) try res.append(try cur.toOwnedSlice());
 
     return res.toOwnedSlice();
 }
