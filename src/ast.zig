@@ -70,7 +70,7 @@ pub fn paragraphs(allocator: std.mem.Allocator, chapter: Element) ![]Paragraph {
             cur = std.ArrayList(Verse).init(allocator);
         }
     }
-    try res.append(try cur.toOwnedSlice());
+    if (cur.items.len > 0) try res.append(try cur.toOwnedSlice());
 
     return res.toOwnedSlice();
 }
