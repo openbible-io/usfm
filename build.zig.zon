@@ -1,6 +1,6 @@
 .{
 	.name = "usfm",
-	.version = "0.0.4",
+	.version = "0.0.5",
 	.dependencies = .{
 		.clap = .{
 			.url = "https://github.com/Hejsil/zig-clap/archive/a1b7a7301b0006bb4c8daaaf5ade8a6df8ec13ae.tar.gz",

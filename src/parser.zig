@@ -137,10 +137,11 @@ pub const Parser = struct {
     fn level(self: Self, tag_id: TagType) u8 {
         const tag = self.tagName(tag_id);
         if (std.mem.eql(u8, tag, "c")) return 0;
-        if (std.mem.eql(u8, tag, "v")) return 1;
-        if (std.mem.eql(u8, tag, "f")) return 2;
-        if (self.isInline(tag_id)) return 4;
-        return 3;
+        if (std.mem.eql(u8, tag, "p")) return 1;
+        if (std.mem.eql(u8, tag, "v")) return 2;
+        if (std.mem.eql(u8, tag, "f")) return 3;
+        if (!self.isInline(tag_id)) return 4;
+        return 5;
     }
 
     fn printErr(self: *Self, pos: usize, comptime fmt: []const u8, args: anytype) void {
@@ -533,6 +534,36 @@ test "hanging text" {
     const c1 = (try parser.next()).?;
     defer c1.deinit(testing.allocator);
     // try c1.print(std.io.getStdErr().writer());
+
+    try testing.expectEqual(@as(?Element, null), try parser.next());
+}
+
+test "paragraphs" {
+    const usfm =
+        \\\p
+        \\\v 1 verse1
+        \\\p
+        \\\v 2 verse2
+    ;
+
+    var parser = try Parser.init(testing.allocator, usfm);
+    defer parser.deinit();
+
+    const p1 = (try parser.next()).?;
+    defer p1.deinit(testing.allocator);
+    try p1.print(std.io.getStdErr().writer());
+
+    const v1 = (try parser.next()).?;
+    defer v1.deinit(testing.allocator);
+    try v1.print(std.io.getStdErr().writer());
+
+    const p2 = (try parser.next()).?;
+    defer p2.deinit(testing.allocator);
+    try p2.print(std.io.getStdErr().writer());
+
+    const v2 = (try parser.next()).?;
+    defer v2.deinit(testing.allocator);
+    try v2.print(std.io.getStdErr().writer());
 
     try testing.expectEqual(@as(?Element, null), try parser.next());
 }

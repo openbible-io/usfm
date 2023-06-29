@@ -47,6 +47,7 @@ pub const Element = struct {
             try writer.writeByte('\n');
             try c.print2(writer, depth + 1);
         }
+        try writer.writeByte('\n');
     }
 
     pub fn print(self: Self, writer: anytype) !void {
