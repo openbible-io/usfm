@@ -88,22 +88,20 @@ pub fn paragraphs(allocator: Allocator, chapter: Element) ![]Paragraph {
     var res = std.ArrayList(Paragraph).init(allocator);
     var paragraph: ?ParagraphBuilder = null;
 
-    for (chapter.children, 0..) |child, i| {
-        const is_last = i == chapter.children.len - 1;
-        if (Parser.isParagraph(child.tag) or is_last) {
+    for (chapter.children) |child| {
+        if (Parser.isParagraph(child.tag)) {
             if (paragraph) |*p| try res.append(try p.toParagraph());
-            if (!is_last) {
-                paragraph = ParagraphBuilder{
-                    .tag = tagName(child.tag),
-                    .verses = std.ArrayList(Verse).init(allocator),
-                };
-            }
+            paragraph = ParagraphBuilder{
+                .tag = tagName(child.tag),
+                .verses = std.ArrayList(Verse).init(allocator),
+            };
         }
         if (paragraph) |*p| {
             const paragraph_verse = try verse(allocator, child);
             if (!paragraph_verse.isEmpty()) try p.verses.append(paragraph_verse);
         }
     }
+    if (paragraph) |*p| try res.append(try p.toParagraph());
 
     return res.toOwnedSlice();
 }
