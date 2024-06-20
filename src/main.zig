@@ -1,12 +1,12 @@
 const std = @import("std");
-const clap = @import("clap");
+const simargs = @import("simargs");
 const Parser = @import("./lib.zig").Parser;
 const Element = @import("./lib.zig").Element;
 const log = @import("./types.zig").log;
 const ast = @import("./ast.zig");
 
-pub const std_options = struct {
-    pub const log_level: std.log.Level = .warn;
+pub const std_options = .{
+    .log_level = .warn,
 };
 
 fn parseFile(outdir: []const u8, fname: []const u8) !void {
@@ -30,7 +30,7 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
 
         const chapter_number = std.fmt.parseInt(u8, ast.trimWhitespace(ele.text), 10) catch {
             log.err("could not parse chapter number {s}", .{ast.trimWhitespace(ele.text)});
-            std.os.exit(2);
+            std.process.exit(2);
         };
 
         const outname = try std.fmt.allocPrint(allocator, "{1s}{0c}{2s}{0c}{3d:0>3}.json", .{
@@ -46,7 +46,7 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
             paragraphs,
             .{
                 .emit_null_optional_fields = false,
-                .whitespace = .{ .indent = .tab, .separator = true },
+                .whitespace = .indent_tab,
             },
             outfile.writer(),
         );
@@ -54,24 +54,20 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
 }
 
 pub fn main() !void {
-    const params = comptime clap.parseParamsComptime(
-        \\-h, --help              Display this help and exit
-        \\-o, --output-dir <str>  Parsed json output path
-        \\<str>...                USFM files to parse
-        \\
-    );
-    var diag = clap.Diagnostic{};
-    var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
-        .diagnostic = &diag,
-    }) catch |err| {
-        diag.report(std.io.getStdErr().writer(), err) catch {};
-        return err;
-    };
-    defer res.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
-    if (res.args.help != 0 or res.positionals.len == 0)
-        return clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{});
+    var opt = try simargs.parse(allocator, struct {
+        output_dir: []const u8 = ".",
+        help: bool = false,
 
-    const outdir = res.args.@"output-dir" orelse ".";
-    for (res.positionals) |fname| try parseFile(outdir, fname);
+        pub const __shorts__ = .{
+            .output_dir = .o,
+            .help = .h,
+        };
+    }, "[file]", null);
+    defer opt.deinit();
+
+    for (opt.positional_args.items) |fname| try parseFile(opt.args.output_dir, fname);
 }

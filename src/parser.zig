@@ -213,7 +213,7 @@ pub const Parser = struct {
             switch (maybe_token) {
                 .text => |t| {
                     _ = try self.lexer.next();
-                    var child_text = try self.allocator.dupe(u8, t);
+                    const child_text = try self.allocator.dupe(u8, t);
                     errdefer self.allocator.free(child_text);
                     try children.append(Element{
                         .tag = "text",
@@ -302,10 +302,10 @@ test "single simple tag" {
     var parser = try Parser.init(testing.allocator, usfm);
     defer parser.deinit();
 
-    const ele1 = (try parser.next()).?;
-    defer ele1.deinit(testing.allocator);
-    try testing.expectEqualStrings("id", ele1.tag);
-    try testing.expectEqualStrings(usfm[4..], ele1.text);
+    const id = (try parser.next()).?;
+    defer id.deinit(testing.allocator);
+    try testing.expectEqualStrings("id", id.tag);
+    try testing.expectEqualStrings(usfm[4..], id.text);
 
     try testing.expectEqual(@as(?Element, null), try parser.next());
 }
@@ -338,12 +338,12 @@ test "single attribute tag" {
     var parser = try Parser.init(testing.allocator, usfm);
     defer parser.deinit();
 
-    const ele = (try parser.next()).?;
-    defer ele.deinit(testing.allocator);
-    try testing.expectEqualStrings("v", ele.tag);
-    try testing.expectEqualStrings("1 ", ele.text);
+    const verse = (try parser.next()).?;
+    defer verse.deinit(testing.allocator);
+    try testing.expectEqualStrings("v", verse.tag);
+    try testing.expectEqualStrings("1 ", verse.text);
 
-    const word = ele.children[0];
+    const word = verse.children[0];
     try testing.expectEqualStrings("w", word.tag);
     try testing.expectEqualStrings("hello ", word.text);
 
@@ -361,12 +361,12 @@ test "empty attribute tag" {
     var parser = try Parser.init(testing.allocator, usfm);
     defer parser.deinit();
 
-    const ele = (try parser.next()).?;
-    defer ele.deinit(testing.allocator);
-    try testing.expectEqualStrings("v", ele.tag);
-    try testing.expectEqualStrings("1 ", ele.text);
+    const verse = (try parser.next()).?;
+    defer verse.deinit(testing.allocator);
+    try testing.expectEqualStrings("v", verse.tag);
+    try testing.expectEqualStrings("1 ", verse.text);
 
-    const word = ele.children[0];
+    const word = verse.children[0];
     try testing.expectEqualStrings("w", word.tag);
     try testing.expectEqualStrings("hello ", word.text);
 
@@ -382,23 +382,23 @@ test "milestones" {
     var parser = try Parser.init(testing.allocator, usfm);
     defer parser.deinit();
 
-    const ele = (try parser.next()).?;
-    defer ele.deinit(testing.allocator);
+    const verse = (try parser.next()).?;
+    defer verse.deinit(testing.allocator);
 
-    try testing.expectEqualStrings("v", ele.tag);
-    try testing.expectEqualStrings("1 ", ele.text);
+    try testing.expectEqualStrings("v", verse.tag);
+    try testing.expectEqualStrings("1 ", verse.text);
 
-    const zalns = ele.children[0];
+    const zalns = verse.children[0];
     try testing.expectEqualStrings("zaln-s", zalns.tag);
 
-    const word = ele.children[1];
+    const word = verse.children[1];
     try testing.expectEqualStrings("w", word.tag);
     try testing.expectEqualStrings("In", word.text);
 
-    const zalne = ele.children[2];
+    const zalne = verse.children[2];
     try testing.expectEqualStrings("zaln-e", zalne.tag);
 
-    const text = ele.children[3];
+    const text = verse.children[3];
     try testing.expectEqualStrings("text", text.tag);
     try testing.expectEqualStrings("there", text.text);
 
@@ -415,17 +415,17 @@ test "line breaks" {
     var parser = try Parser.init(testing.allocator, usfm);
     defer parser.deinit();
 
-    const ele = (try parser.next()).?;
-    defer ele.deinit(testing.allocator);
+    const verse = (try parser.next()).?;
+    defer verse.deinit(testing.allocator);
 
-    try testing.expectEqualStrings("v", ele.tag);
-    try testing.expectEqualStrings("1 ", ele.text);
-    try testing.expectEqualStrings("In", ele.children[0].text);
-    try testing.expectEqualStrings("\n", ele.children[1].text);
-    try testing.expectEqualStrings("the", ele.children[2].text);
-    try testing.expectEqualStrings("\n", ele.children[3].text);
-    try testing.expectEqualStrings("beginning", ele.children[4].text);
-    try testing.expectEqualStrings("\ntextnode", ele.children[5].text);
+    try testing.expectEqualStrings("v", verse.tag);
+    try testing.expectEqualStrings("1 ", verse.text);
+    try testing.expectEqualStrings("In", verse.children[0].text);
+    try testing.expectEqualStrings("\n", verse.children[1].text);
+    try testing.expectEqualStrings("the", verse.children[2].text);
+    try testing.expectEqualStrings("\n", verse.children[3].text);
+    try testing.expectEqualStrings("beginning", verse.children[4].text);
+    try testing.expectEqualStrings("\ntextnode", verse.children[5].text);
 
     try testing.expectEqual(@as(?Element, null), try parser.next());
 }
@@ -439,14 +439,14 @@ test "footnote with inline fqa" {
     var parser = try Parser.init(testing.allocator, usfm);
     defer parser.deinit();
 
-    const ele = (try parser.next()).?;
-    defer ele.deinit(testing.allocator);
+    const verse = (try parser.next()).?;
+    defer verse.deinit(testing.allocator);
     // try ele.print(std.io.getStdErr().writer());
 
-    try testing.expectEqualStrings("v", ele.tag);
-    try testing.expectEqualStrings("2\n", ele.text);
+    try testing.expectEqualStrings("v", verse.tag);
+    try testing.expectEqualStrings("2\n", verse.text);
 
-    const footnote = ele.children[0];
+    const footnote = verse.children[0];
     try testing.expectEqualStrings("f", footnote.tag);
     try testing.expectEqualStrings("+ ", footnote.text);
 
@@ -461,7 +461,7 @@ test "footnote with inline fqa" {
 
     try testing.expectEqual(@as(?Element, null), try parser.next());
 
-    const footnote2 = ele.footnote().?;
+    const footnote2 = verse.footnote().?;
     try testing.expectEqualStrings("f", footnote2.tag);
     try testing.expectEqualStrings("+ ", footnote2.text);
 }
@@ -474,8 +474,8 @@ test "footnote with block fqa" {
     var parser = try Parser.init(testing.allocator, usfm);
     defer parser.deinit();
 
-    const ele = (try parser.next()).?;
-    defer ele.deinit(testing.allocator);
+    const verse = (try parser.next()).?;
+    defer verse.deinit(testing.allocator);
 }
 
 test "header" {
@@ -527,25 +527,25 @@ test "chapters" {
     try testing.expectEqualStrings("1\n", c1.text);
     try testing.expectEqual(@as(usize, 2), c1.children.len);
 
-    var verse1 = c1.children[0];
-    try testing.expectEqualStrings("v", verse1.tag);
-    try testing.expectEqualStrings("1 verse1\n", verse1.text);
+    var v1 = c1.children[0];
+    try testing.expectEqualStrings("v", v1.tag);
+    try testing.expectEqualStrings("1 verse1\n", v1.text);
 
-    var verse2 = c1.children[1];
-    try testing.expectEqualStrings("v", verse2.tag);
-    try testing.expectEqualStrings("2 verse2\n", verse2.text);
+    var v2 = c1.children[1];
+    try testing.expectEqualStrings("v", v2.tag);
+    try testing.expectEqualStrings("2 verse2\n", v2.text);
 
     const c2 = (try parser.next()).?;
     defer c2.deinit(testing.allocator);
     // try c2.print(std.io.getStdErr().writer());
 
-    verse1 = c2.children[0];
-    try testing.expectEqualStrings("v", verse1.tag);
-    try testing.expectEqualStrings("1 asdf\n", verse1.text);
+    v1 = c2.children[0];
+    try testing.expectEqualStrings("v", v1.tag);
+    try testing.expectEqualStrings("1 asdf\n", v1.text);
 
-    verse2 = c2.children[1];
-    try testing.expectEqualStrings("v", verse2.tag);
-    try testing.expectEqualStrings("2 hjkl", verse2.text);
+    v2 = c2.children[1];
+    try testing.expectEqualStrings("v", v2.tag);
+    try testing.expectEqualStrings("2 hjkl", v2.text);
 
     try testing.expectEqual(@as(?Element, null), try parser.next());
 }
@@ -559,8 +559,8 @@ test "hanging text" {
     var parser = try Parser.init(testing.allocator, usfm);
     defer parser.deinit();
 
-    const c1 = (try parser.next()).?;
-    defer c1.deinit(testing.allocator);
+    const ip = (try parser.next()).?;
+    defer ip.deinit(testing.allocator);
     // try c1.print(std.io.getStdErr().writer());
 
     try testing.expectEqual(@as(?Element, null), try parser.next());

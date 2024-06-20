@@ -4,19 +4,18 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const clap_dep = b.dependency("clap", .{
+    const zigcli = b.dependency("zigcli", .{
         .target = target,
         .optimize = optimize,
     });
-    const clap = clap_dep.module("clap");
 
     const exe = b.addExecutable(.{
         .name = "usfm",
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-    exe.addModule("clap", clap);
+    exe.root_module.addImport("simargs", zigcli.module("simargs"));
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -27,7 +26,7 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     const main_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/lib.zig" },
+        .root_source_file = b.path("src/lib.zig"),
         .target = target,
         .optimize = optimize,
     });

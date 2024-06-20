@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -30,7 +32,7 @@ const zigToNodeCPU = {
 	'x86_64': 'x64',
 };
 
-const packageName = t => `${scope}/usfm-${t}`;
+const packageName = t => `${name}-${t}`;
 
 function writeNPMFiles(package_json) {
 	const package_dir = path.join(packages_dir, package_json.name);
@@ -55,11 +57,9 @@ function buildTarget(t) {
 		repository: 'https://github.com/openbible-io/usfm',
 		license: 'MIT',
 		preferUnplugged: true, // Keeps yarn from compressing binary
-		engines: {
-			node: '>=12',
-		},
-		os: [zigToNodeOS[split[1]]],
+		engines: { node: '>=12' },
 		cpu: [zigToNodeCPU[split[0]]],
+		os: [zigToNodeOS[split[1]]],
 	};
 	writeNPMFiles(package_json);
 	const package_dir = path.join(packages_dir, package_json.name);

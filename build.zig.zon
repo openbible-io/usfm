@@ -1,10 +1,12 @@
-.{
-	.name = "usfm",
-	.version = "0.1.5",
-	.dependencies = .{
-		.clap = .{
-			.url = "https://github.com/Hejsil/zig-clap/archive/a1b7a7301b0006bb4c8daaaf5ade8a6df8ec13ae.tar.gz",
-			.hash = "12205aeff59f41f96033d280471730c171c9a825d8758743249bed834e1590f593e3",
-		},
-	}
-}
+.{ .name = "usfm", .version = "0.1.5", .dependencies = .{
+    .zigcli = .{
+            .url = "https://github.com/jiacai2050/zigcli/archive/54d095c0a53669b2f2ff4e173e8c22f47d496eda.tar.gz",
+            .hash = "1220e8fb37224ab6ee9c575129594a808643b548596d63dd8b87cb42e22a7eed9f51",
+        },
+}, .paths = .{
+    "build.zig",
+    "build.zig.zon",
+    "src",
+    "LICENSE",
+    "README.md",
+} }

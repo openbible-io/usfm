@@ -114,14 +114,14 @@ pub const Lexer = struct {
             if (tag[tag.len - 1] != '*') {
                 try self.eatSpaceN(1);
                 log.debug("open tag '{s}'", .{tag});
-                const id = try self.getOrPut(tag, @intCast(TagType, self.token_ids.count()));
+                const id = try self.getOrPut(tag, @intCast(self.token_ids.count()));
                 return .{ .tag_open = id };
             } else { // End tag like `\w*` or '\*';
                 self.in_attribute = false;
                 var id: TagType = 0;
                 if (tag.len > 1) {
                     tag = tag[0 .. tag.len - 1];
-                    id = try self.getOrPut(tag, @intCast(TagType, self.token_ids.count()));
+                    id = try self.getOrPut(tag, @intCast(self.token_ids.count()));
                 }
                 log.debug("close tag '{s}'", .{tag});
                 return .{ .tag_close = id };
@@ -131,7 +131,7 @@ pub const Lexer = struct {
             self.in_attribute = true;
             return .attribute_start;
         } else if (self.in_attribute) {
-            var key_len = try self.readUntilDelimiters(&[_]u8{ '\n', '\t', ' ', '=', '\\' });
+            const key_len = try self.readUntilDelimiters(&[_]u8{ '\n', '\t', ' ', '=', '\\' });
             const key = self.buffer[token_start .. token_start + key_len];
             log.debug("key '{s}'", .{key});
 

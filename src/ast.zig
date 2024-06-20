@@ -7,7 +7,7 @@ const Allocator = std.mem.Allocator;
 const whitespace = &[_]u8{ ' ', '\t', '\n' };
 
 fn getText(text: []const u8) []const u8 {
-    var res = @constCast(std.mem.trim(u8, text, whitespace));
+    const res = @constCast(std.mem.trim(u8, text, whitespace));
     for (res) |*c| {
         if (c.* == '\n') c.* = ' ';
     }
