@@ -26,14 +26,11 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
         // We only care about chapters
         if (!ast.isChapter(ele)) continue;
 
-        const paragraphs = try ast.paragraphs(allocator, ele);
-
         const chapter_number = std.fmt.parseInt(u8, ast.trimWhitespace(ele.text), 10) catch {
             log.err("could not parse chapter number {s}", .{ast.trimWhitespace(ele.text)});
-            std.process.exit(2);
+            return error.InvalidChapterNumber;
         };
-
-        const outname = try std.fmt.allocPrint(allocator, "{1s}{0c}{2s}{0c}{3d:0>3}.json", .{
+        const outname = try std.fmt.allocPrint(allocator, "{1s}{0c}{2s}{0c}{3d:0>3}.html", .{
             std.fs.path.sep,
             outdir,
             std.fs.path.stem(fname),
@@ -42,14 +39,8 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
         try std.fs.cwd().makePath(std.fs.path.dirname(outname).?);
         var outfile = try std.fs.cwd().createFile(outname, .{});
         defer outfile.close();
-        try std.json.stringify(
-            paragraphs,
-            .{
-                .emit_null_optional_fields = false,
-                .whitespace = .indent_tab,
-            },
-            outfile.writer(),
-        );
+
+        try ele.html(outfile.writer());
     }
 }
 

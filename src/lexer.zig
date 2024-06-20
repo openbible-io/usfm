@@ -3,7 +3,6 @@ const types = @import("./types.zig");
 
 const Allocator = std.mem.Allocator;
 const testing = std.testing;
-const TagType = types.TagType;
 const Token = types.Token;
 const log = types.log;
 
@@ -16,35 +15,14 @@ fn isWhitespace(c: u8) bool {
 
 pub const Lexer = struct {
     const Self = @This();
-    const TokenIds = std.StringHashMap(TagType);
     const Tokens = std.ArrayList([]const u8);
 
     allocator: Allocator,
     buffer: []const u8,
-    pos: usize,
-    tokens: Tokens,
-    token_ids: TokenIds,
-    in_attribute: bool,
+    pos: usize = 0,
 
-    pub fn init(allocator: Allocator, buffer: []const u8) !Self {
-        var res = Self{
-            .allocator = allocator,
-            .buffer = buffer,
-            .pos = 0,
-            .tokens = try Tokens.initCapacity(allocator, 64),
-            .token_ids = TokenIds.init(allocator),
-            .in_attribute = false,
-        };
-        // Reserve 0 for self-closing tags
-        try res.tokens.append("");
-        try res.token_ids.put("", 0);
-        return res;
-    }
-
-    pub fn deinit(self: *Self) void {
-        for (self.tokens.items) |t| if (t.len > 0) self.allocator.free(t);
-        self.tokens.deinit();
-        self.token_ids.deinit();
+    pub fn init(allocator: Allocator, buffer: []const u8) Lexer {
+        return .{ .allocator = allocator, .buffer = buffer };
     }
 
     fn readByte(self: *Self) !u8 {
@@ -75,17 +53,6 @@ pub const Lexer = struct {
         }
     }
 
-    fn getOrPut(self: *Self, key: []const u8, val: TagType) !TagType {
-        const maybe_id = self.token_ids.get(key);
-        if (maybe_id) |id| return id;
-
-        const copy = try self.allocator.alloc(u8, key.len);
-        @memcpy(copy, key);
-        try self.tokens.append(copy);
-        try self.token_ids.put(copy, val);
-        return val;
-    }
-
     fn eatSpaceN(self: *Self, n: usize) !void {
         var n_eaten: usize = 0;
         while (n_eaten <= n) {
@@ -103,61 +70,26 @@ pub const Lexer = struct {
     }
 
     pub fn next(self: *Self) !?Token {
-        const token_start = self.pos;
+        const start = self.pos;
         const next_c = self.readByte() catch |err| {
             return if (err == error.EndOfStream) null else err;
         };
         if (next_c == '\\') {
-            const len = try self.readUntilDelimiters(&[_]u8{ '\n', '\t', ' ', '*', '\\' });
-            var tag = self.buffer[token_start + 1 .. token_start + len];
-
-            if (tag[tag.len - 1] != '*') {
+            _ = try self.readUntilDelimiters(&[_]u8{ '\n', '\t', ' ', '*', '\\' });
+            if (self.buffer[self.pos - 1] != '*') {
                 try self.eatSpaceN(1);
-                log.debug("open tag '{s}'", .{tag});
-                const id = try self.getOrPut(tag, @intCast(self.token_ids.count()));
-                return .{ .tag_open = id };
+                return .{ .start = start, .end = self.pos - 1, .tag = .tag_open };
             } else { // End tag like `\w*` or '\*';
-                self.in_attribute = false;
-                var id: TagType = 0;
-                if (tag.len > 1) {
-                    tag = tag[0 .. tag.len - 1];
-                    id = try self.getOrPut(tag, @intCast(self.token_ids.count()));
-                }
-                log.debug("close tag '{s}'", .{tag});
-                return .{ .tag_close = id };
+                return .{ .start = start, .end = self.pos, .tag = .tag_close };
             }
         } else if (next_c == '|') {
             try self.eatSpace();
-            self.in_attribute = true;
-            return .attribute_start;
-        } else if (self.in_attribute) {
-            const key_len = try self.readUntilDelimiters(&[_]u8{ '\n', '\t', ' ', '=', '\\' });
-            const key = self.buffer[token_start .. token_start + key_len];
-            log.debug("key '{s}'", .{key});
-
-            try self.eatSpace();
-            const maybe_equals = try self.readByte();
-            var val: []const u8 = "";
-            if (maybe_equals == '=') {
-                try self.eatSpace();
-                const maybe_quote = try self.readByte();
-                if (maybe_quote == '"') {
-                    const len = try self.readUntilDelimiters(&[_]u8{'"'});
-                    self.pos += 1;
-                    val = self.buffer[self.pos - len .. self.pos - 1];
-                    try self.eatSpace();
-                    log.debug("val {s}", .{val});
-                }
-            } else {
-                self.pos -= 1;
-            }
-            log.debug("KV {s} {s}", .{ key, val });
-            return .{ .attribute = .{ .key = key, .val = val } };
+            _ = try self.readUntilDelimiters(&[_]u8{ '*', '\\' });
+            return .{ .start = start + 1, .end = self.pos, .tag = .attributes };
         }
-        const len = try self.readUntilDelimiters(&[_]u8{ '|', '\\' });
-        const text = self.buffer[token_start .. token_start + len];
+        _ = try self.readUntilDelimiters(&[_]u8{ '|', '\\' });
 
-        return .{ .text = text };
+        return .{ .start = start, .end = self.pos, .tag = .text };
     }
 
     pub fn peek(self: *Self) !?Token {
@@ -166,164 +98,106 @@ pub const Lexer = struct {
         self.pos = pos;
         return res;
     }
+
+    pub fn view(self: Self, token: Token) []const u8 {
+        return self.buffer[token.start..token.end];
+    }
 };
 
-test "single simple tag" {
-    const usfm =
-        \\\id GEN EN_ULT en_English_ltr
-    ;
-    var lex = try Lexer.init(testing.allocator, usfm);
-    defer lex.deinit();
+fn expectTokens(usfm: []const u8, expected: []const Token) !void {
+    const allocator = testing.allocator;
 
-    try testing.expectEqual(Token{ .tag_open = 1 }, (try lex.next()).?);
-    try testing.expectEqualStrings(usfm[4..], (try lex.next()).?.text);
-    try testing.expectEqual(@as(?Token, null), try lex.next());
+    var actual = std.ArrayList(Token).init(allocator);
+    defer actual.deinit();
+
+    var lex = Lexer.init(allocator, usfm);
+    while (try lex.next()) |t| try actual.append(t);
+
+    try std.testing.expectEqualSlices(Token, expected, actual.items);
+}
+
+test "single simple tag" {
+    try expectTokens(
+        "\\id GEN EN_ULT en_English_ltr",
+        &[_]Token{
+            .{ .start = 0, .end = 3, .tag = .tag_open },
+            .{ .start = 4, .end = 29, .tag = .text },
+        },
+    );
 }
 
 test "two simple tags" {
-    const usfm =
+    try expectTokens(
         \\\id GEN EN_ULT en_English_ltr
         \\\usfm 3.0
-    ;
-    var lex = try Lexer.init(testing.allocator, usfm);
-    defer lex.deinit();
-
-    try testing.expectEqual(Token{ .tag_open = 1 }, (try lex.next()).?);
-    try testing.expectEqualStrings(usfm[4..30], (try lex.next()).?.text);
-    try testing.expectEqual(Token{ .tag_open = 2 }, (try lex.next()).?);
-    try testing.expectEqualStrings("3.0", (try lex.next()).?.text);
-    try testing.expectEqual(@as(?Token, null), try lex.next());
+    ,
+        &[_]Token{
+            .{ .start = 0, .end = 3, .tag = .tag_open },
+            .{ .start = 4, .end = 30, .tag = .text },
+            .{ .start = 30, .end = 35, .tag = .tag_open },
+            .{ .start = 36, .end = 39, .tag = .text },
+        },
+    );
 }
 
 test "single attribute tag" {
-    const usfm =
+    try expectTokens(
         \\\word hello |   x-occurences  =   "1" \word*
-    ;
-    var lex = try Lexer.init(testing.allocator, usfm);
-    defer lex.deinit();
-
-    try testing.expectEqual(Token{ .tag_open = 1 }, (try lex.next()).?);
-    try testing.expectEqualStrings("hello ", (try lex.next()).?.text);
-    try testing.expectEqual(Token.attribute_start, (try lex.next()).?);
-    const attribute = (try lex.next()).?.attribute;
-    try testing.expectEqualStrings("x-occurences", attribute.key);
-    try testing.expectEqualStrings("1", attribute.val);
-    try testing.expectEqual(Token{ .tag_close = 1 }, (try lex.next()).?);
-    try testing.expectEqual(@as(?Token, null), try lex.next());
+    ,
+        &[_]Token{
+            .{ .start = 0, .end = 5, .tag = .tag_open },
+            .{ .start = 6, .end = 12, .tag = .text },
+            .{ .start = 13, .end = 38, .tag = .attributes },
+            .{ .start = 38, .end = 44, .tag = .tag_close },
+        },
+    );
 }
 
 test "empty attribute tag" {
-    const usfm =
-        \\\w hello |\w*
-    ;
-    var lex = try Lexer.init(testing.allocator, usfm);
-    defer lex.deinit();
-
-    try testing.expectEqual(Token{ .tag_open = 1 }, (try lex.next()).?);
-    try testing.expectEqualStrings("hello ", (try lex.next()).?.text);
-    try testing.expectEqual(Token.attribute_start, (try lex.next()).?);
-    try testing.expectEqual(Token{ .tag_close = 1 }, (try lex.next()).?);
-    try testing.expectEqual(@as(?Token, null), try lex.next());
+    try expectTokens(
+        \\\word hello |\word*
+    ,
+        &[_]Token{
+            .{ .start = 0, .end = 5, .tag = .tag_open },
+            .{ .start = 6, .end = 12, .tag = .text },
+            .{ .start = 13, .end = 13, .tag = .attributes },
+            .{ .start = 13, .end = 19, .tag = .tag_close },
+        },
+    );
 }
 
 test "self closing tag" {
-    const usfm =
+    try expectTokens(
         \\\zaln-s hello\*
-    ;
-    var lex = try Lexer.init(testing.allocator, usfm);
-    defer lex.deinit();
-
-    try testing.expectEqual(Token{ .tag_open = 1 }, (try lex.next()).?);
-    try testing.expectEqualStrings("hello", (try lex.next()).?.text);
-    try testing.expectEqual(Token{ .tag_close = 0 }, (try lex.next()).?);
-    try testing.expectEqual(@as(?Token, null), try lex.next());
-}
-
-test "full line" {
-    const usfm =
-        \\\v 1 \zaln-s |x-strong="b:H7225" x-morph="He,R:Ncfsa"\*\w In\w*
-    ;
-    var lex = try Lexer.init(testing.allocator, usfm);
-    defer lex.deinit();
-
-    try testing.expectEqual(Token{ .tag_open = 1 }, (try lex.next()).?);
-    try testing.expectEqualStrings("1 ", (try lex.next()).?.text);
-    try testing.expectEqual(Token{ .tag_open = 2 }, (try lex.next()).?);
-    try testing.expectEqual(Token.attribute_start, (try lex.next()).?);
-    const attribute = (try lex.next()).?.attribute;
-    try testing.expectEqualStrings("x-strong", attribute.key);
-    try testing.expectEqualStrings("b:H7225", attribute.val);
-    const attribute2 = (try lex.next()).?.attribute;
-    try testing.expectEqualStrings("x-morph", attribute2.key);
-    try testing.expectEqualStrings("He,R:Ncfsa", attribute2.val);
-    try testing.expectEqual(Token{ .tag_close = 0 }, (try lex.next()).?);
-
-    try testing.expectEqual(Token{ .tag_open = 3 }, (try lex.next()).?);
-    try testing.expectEqualStrings("In", (try lex.next()).?.text);
-    try testing.expectEqual(Token{ .tag_close = 3 }, (try lex.next()).?);
-
-    try testing.expectEqual(@as(?Token, null), try lex.next());
-}
-
-test "milestones" {
-    const usfm =
-        \\\v 1 \zaln-s\*\w In\w*\zaln-e\*there
-    ;
-    var lex = try Lexer.init(testing.allocator, usfm);
-    defer lex.deinit();
-
-    try testing.expectEqual(Token{ .tag_open = 1 }, (try lex.next()).?);
-    try testing.expectEqualStrings("1 ", (try lex.next()).?.text);
-    try testing.expectEqual(Token{ .tag_open = 2 }, (try lex.next()).?);
-    try testing.expectEqual(Token{ .tag_close = 0 }, (try lex.next()).?);
-    try testing.expectEqual(Token{ .tag_open = 3 }, (try lex.next()).?);
-    try testing.expectEqualStrings("In", (try lex.next()).?.text);
-    try testing.expectEqual(Token{ .tag_close = 3 }, (try lex.next()).?);
-    try testing.expectEqual(Token{ .tag_open = 4 }, (try lex.next()).?);
-    try testing.expectEqual(Token{ .tag_close = 0 }, (try lex.next()).?);
-    try testing.expectEqualStrings("there", (try lex.next()).?.text);
-
-    try testing.expectEqual(@as(?Token, null), try lex.next());
+    ,
+        &[_]Token{
+            .{ .start = 0, .end = 7, .tag = .tag_open },
+            .{ .start = 8, .end = 13, .tag = .text },
+            .{ .start = 13, .end = 15, .tag = .tag_close },
+        },
+    );
 }
 
 test "line breaks" {
-    const usfm =
+    try expectTokens(
         \\\v 1 \w In\w*
         \\\w the\w*
         \\\w beginning\w*
-    ;
-    var lex = try Lexer.init(testing.allocator, usfm);
-    defer lex.deinit();
-
-    try testing.expectEqual(Token{ .tag_open = 1 }, (try lex.next()).?);
-    try testing.expectEqualStrings("1 ", (try lex.next()).?.text);
-
-    try testing.expectEqual(Token{ .tag_open = 2 }, (try lex.next()).?);
-    try testing.expectEqualStrings("In", (try lex.next()).?.text);
-    try testing.expectEqual(Token{ .tag_close = 2 }, (try lex.next()).?);
-
-    try testing.expectEqualStrings("\n", (try lex.next()).?.text);
-
-    try testing.expectEqual(Token{ .tag_open = 2 }, (try lex.next()).?);
-    try testing.expectEqualStrings("the", (try lex.next()).?.text);
-    try testing.expectEqual(Token{ .tag_close = 2 }, (try lex.next()).?);
-
-    try testing.expectEqualStrings("\n", (try lex.next()).?.text);
-
-    try testing.expectEqual(Token{ .tag_open = 2 }, (try lex.next()).?);
-    try testing.expectEqualStrings("beginning", (try lex.next()).?.text);
-    try testing.expectEqual(Token{ .tag_close = 2 }, (try lex.next()).?);
-
-    try testing.expectEqual(@as(?Token, null), try lex.next());
-}
-
-test "full file" {
-    var file = try std.fs.cwd().openFile("./examples/01-GEN.usfm", .{});
-    defer file.close();
-    const usfm = try file.readToEndAlloc(testing.allocator, 4 * 1_000_000_000);
-    defer testing.allocator.free(usfm);
-    var lex = try Lexer.init(testing.allocator, usfm);
-    defer lex.deinit();
-
-    while (try lex.next()) |_| {}
+    ,
+        &[_]Token{
+            .{ .tag = .tag_open, .start = 0, .end = 2 },
+            .{ .tag = .text, .start = 3, .end = 5 },
+            .{ .tag = .tag_open, .start = 5, .end = 7 },
+            .{ .tag = .text, .start = 8, .end = 10 },
+            .{ .tag = .tag_close, .start = 10, .end = 13 },
+            .{ .tag = .text, .start = 13, .end = 14 },
+            .{ .tag = .tag_open, .start = 14, .end = 16 },
+            .{ .tag = .text, .start = 17, .end = 20 },
+            .{ .tag = .tag_close, .start = 20, .end = 23 },
+            .{ .tag = .text, .start = 23, .end = 24 },
+            .{ .tag = .tag_open, .start = 24, .end = 26 },
+            .{ .tag = .text, .start = 27, .end = 36 },
+            .{ .tag = .tag_close, .start = 36, .end = 39 },
+        },
+    );
 }
