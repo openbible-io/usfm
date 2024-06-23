@@ -4,7 +4,7 @@ const Element = @import("./lib.zig").Element;
 const log = @import("./types.zig").log;
 
 const Allocator = std.mem.Allocator;
-const whitespace = &[_]u8{ ' ', '\t', '\n' };
+const whitespace = Parser.whitespace;
 
 fn getText(text: []const u8) []const u8 {
     const res = @constCast(std.mem.trim(u8, text, whitespace));

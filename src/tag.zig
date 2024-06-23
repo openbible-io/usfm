@@ -1,7 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
 
-pub const log = std.log.scoped(.usfm);
 pub const Tag = union(enum) {
     // identification
     id, // file id
@@ -101,18 +100,18 @@ pub const Tag = union(enum) {
 
     // footnotes
     f, // footnote
-    fe, // footnote endnote
-    fr, // footnote reference
-    fq, // footnote quotation
-    fqa, // footnote alternative translation
-    fk, // footnote keyword
-    fl, // footnote label
-    fw, // footnote witness list
-    fp, // footnote additional paragraph
-    fv, // footnote verse number
-    ft, // footnote text
-    fdc, // footnote deuterocanonical content
-    fm, // footnote reference mark
+    fe, // endnote
+    fr, // reference
+    fq, // quotation
+    fqa, // alternative translation
+    fk, // keyword
+    fl, // label
+    fw, // witness list
+    fp, // additional paragraph
+    fv, // verse number
+    ft, // text
+    fdc, // deuterocanonical content
+    fm, // reference mark
 
     // cross references
     x, // x-ref
@@ -178,6 +177,7 @@ pub const Tag = union(enum) {
     @"qt-e": u8, // quotation
     @"ts-e", // translator
     @"z-e", // user
+    ts, // undocumented unfoldingword
 
     // extended study content
     ef, // extended footnote
@@ -191,7 +191,8 @@ pub const Tag = union(enum) {
         if (in_buffer.len == 0 or in_buffer[0] != '\\') {
             return error.MissingTagPrefix;
         }
-        const buffer = in_buffer[1..];
+        var buffer = in_buffer[1..];
+        if (buffer[buffer.len - 1] == '*') buffer = buffer[0..buffer.len - 1];
 
         const digits = [_]u8{ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
         const digit_n = std.mem.indexOfAny(u8, buffer, &digits) orelse buffer.len;
@@ -232,7 +233,7 @@ pub const Tag = union(enum) {
                 inline else => |t| {
                     @setEvalBranchQuota(10000);
                     if (std.meta.FieldType(Tag, t) == u8) {
-                        const n = try std.fmt.parseInt(u8, buffer[digit_n..], 10);
+                        const n = if (digit_n >= buffer.len) 0 else try std.fmt.parseInt(u8, buffer[digit_n..], 10);
                         return @unionInit(Tag, @tagName(t), n);
                     } else {
                         return @unionInit(Tag, @tagName(t), {});
@@ -285,6 +286,7 @@ pub const Tag = union(enum) {
             .sp,
             .sd,
             // chapters and verses
+            .c,
             .cl,
             .cp,
             .cd,
@@ -395,9 +397,6 @@ pub const Tag = union(enum) {
             .wa,
             // linking
             .jmp,
-            // milestones
-            .@"qt-s",
-            .@"ts-s",
             // extended study content
             .ef,
             .ex,
@@ -406,67 +405,49 @@ pub const Tag = union(enum) {
             else => false,
         };
     }
-};
 
-pub const Token = struct {
-    pub const Tag = enum {
-        tag_open,
-        tag_close,
-        text,
-        attributes,
-    };
-    tag: Token.Tag,
-    start: usize,
-    end: usize,
-};
-
-pub const Element = union(enum) {
-    node: Node,
-    text: []const u8,
-
-    pub const Node = struct {
-        pub const Attribute = struct {
-            key: []const u8,
-            val: []const u8,
+    pub fn isMilestoneStart(self: Tag) bool {
+        return switch (self) {
+            .@"qt-s", .@"ts-s", .@"z-s", .ts => true,
+            else => false,
         };
+    }
 
-        tag: Tag,
-        attributes: []const Attribute = &.{},
-        children: []const Element = &.{},
+    pub fn hasMilestoneEnd(self: Tag) bool {
+        return switch (self) {
+            .@"qt-s", .@"ts-s", .@"z-s" => true,
+            else => false,
+        };
+    }
 
-        const Self = @This();
-        const tab = "  ";
+    pub fn isMilestoneEnd(self: Tag) bool {
+        return switch (self) {
+            .@"qt-e", .@"ts-e", .@"z-e" => true,
+            else => false,
+        };
+    }
 
-        pub fn deinit(self: Self, allocator: std.mem.Allocator) void {
-            allocator.free(self.attributes);
-            for (self.children) |c| c.deinit(allocator);
-            allocator.free(self.children);
-        }
+    pub fn isCharacter(self: Tag) bool {
+        return !self.isMilestoneStart() and !self.isMilestoneEnd() and !self.isParagraph();
+    }
 
-        fn html2(self: Self, writer: anytype, depth: usize) !void {
-            for (0..depth) |_| try writer.writeAll(tab);
-            try writer.print("<{s}", .{self.tag});
-            for (self.attributes) |a| try writer.print(" {s}=\"{s}\"", .{ a.key, a.val });
-            try writer.writeByte('>');
-            for (0..depth + 1) |_| try writer.writeAll(tab);
-            try writer.print("\"{s}\"", .{self.text});
-            for (self.children) |c| {
-                try writer.writeByte('\n');
-                try c.html2(writer, depth + 1);
-            }
-            try writer.print("\n</{s}>", .{self.tag});
-        }
+    pub fn validAttributes(self: Tag) []const []const u8 {
+        return switch (self) {
+            .w => &[_][]const u8{"lemma", "strong", "srcloc"},
+            .rb => &[_][]const u8{"gloss"},
+            .xt => &[_][]const u8{"link-href" },
+            .fig => &[_][]const u8{"alt", "src", "size", "loc", "copy", "ref"},
+            else => &[_][]const u8{},
+        };
+    }
 
-        pub fn html(self: Self, writer: anytype) !void {
-            try self.html2(writer, 0);
-        }
-    };
-
-    pub fn deinit(self: Element, allocator: std.mem.Allocator) void {
-        switch (self) {
-            .node => |n| n.deinit(allocator),
-            .text => {},
-        }
+    pub fn defaultAttribute(self: Tag) ?[]const u8 {
+        return switch (self) {
+            .w => "lemma",
+            .rb => "gloss",
+            .xt => "link-href",
+            else => null,
+        };
     }
 };
 
