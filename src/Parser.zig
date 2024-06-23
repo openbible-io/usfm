@@ -29,6 +29,7 @@ fn expect(self: *Parser, tag: Token.Tag) !Token {
         if (actual.tag == tag) return actual;
         self.printErr(actual, "expected {s}, got {s}", .{ @tagName(tag), @tagName(actual.tag) });
     }
+    log.err("expected {s}, got EOF", .{ @tagName(tag) });
     return error.UnexpectedToken;
 }
 
@@ -94,7 +95,6 @@ fn parseMilestone(self: *Parser) !?Element {
     defer builder.deinit();
     if (!builder.tag.isMilestoneStart()) return null;
     _ = try self.lexer.next();
-    log.warn("milestone", .{});
 
     try self.parseAttributes(builder.tag, &builder.attributes);
     try self.expectSelfClose();
@@ -122,7 +122,6 @@ fn parseInline(self: *Parser) !?Element {
     if (!builder.tag.isInline()) return null;
     _ = try self.lexer.next();
     try self.parseTextAttributes(builder.tag, &builder.attributes);
-    log.warn("inline", .{});
 
     while (try self.parseNode() orelse try self.parseText()) |c| try builder.children.append(c);
     try self.parseAttributes(builder.tag, &builder.attributes);
@@ -147,7 +146,6 @@ fn parseParagraph(self: *Parser) !?Element {
     if (!builder.tag.isParagraph()) return null;
     _ = try self.lexer.next();
     try self.parseTextAttributes(builder.tag, &builder.attributes);
-    log.warn("para", .{});
 
     while (
         try self.parseMilestone() orelse
@@ -165,7 +163,6 @@ fn parseCharacter(self: *Parser) !?Element {
     if (!builder.tag.isCharacter()) return null;
     _ = try self.lexer.next();
     try self.parseTextAttributes(builder.tag, &builder.attributes);
-    log.warn("character", .{});
 
     if (try self.parseText()) |c| try builder.children.append(c);
     // Undocumented: may include closing tag
@@ -186,7 +183,6 @@ fn parseText(self: *Parser) !?Element {
     const token = try self.lexer.peek() orelse return null;
     if (token.tag != .text) return null;
     _ = try self.lexer.next();
-    log.warn("text", .{});
 
     return .{ .text =  self.lexer.view(token) };
 }
@@ -458,7 +454,6 @@ test "header" {
         \\<c n="1"></c>
         \\
     );
-
 }
 
 test "chapters" {

@@ -1,9 +1,8 @@
 const std = @import("std");
 const simargs = @import("simargs");
-const Parser = @import("./lib.zig").Parser;
-const Element = @import("./lib.zig").Element;
-const log = @import("./types.zig").log;
-const ast = @import("./ast.zig");
+const Parser = @import("./Parser.zig");
+const Element = Parser.Element;
+const log = std.log.scoped(.usfm);
 
 pub const std_options = .{
     .log_level = .warn,
@@ -19,28 +18,34 @@ fn parseFile(outdir: []const u8, fname: []const u8) !void {
     defer file.close();
 
     const usfm = try file.readToEndAlloc(allocator, 4 * 1_000_000_000);
-    var parser = try Parser.init(allocator, usfm);
+    var parser = Parser.init(allocator, usfm);
+
+    var outfile: ?std.fs.File = null;
+    defer if (outfile) |o| o.close();
 
     while (try parser.next()) |ele| {
-        // try ele.print(std.io.getStdErr().writer());
         // We only care about chapters
-        if (!ast.isChapter(ele)) continue;
-
-        const chapter_number = std.fmt.parseInt(u8, ast.trimWhitespace(ele.text), 10) catch {
-            log.err("could not parse chapter number {s}", .{ast.trimWhitespace(ele.text)});
-            return error.InvalidChapterNumber;
-        };
-        const outname = try std.fmt.allocPrint(allocator, "{1s}{0c}{2s}{0c}{3d:0>3}.html", .{
-            std.fs.path.sep,
-            outdir,
-            std.fs.path.stem(fname),
-            chapter_number,
-        });
-        try std.fs.cwd().makePath(std.fs.path.dirname(outname).?);
-        var outfile = try std.fs.cwd().createFile(outname, .{});
-        defer outfile.close();
-
-        try ele.html(outfile.writer());
+        switch (ele) {
+            .node => |n| {
+                if (n.tag == .c) {
+                    const chapter = std.fmt.parseInt(u8, n.attributes[0].value, 10) catch {
+                        log.err("could not parse chapter number {s}", .{n.attributes[0].value});
+                        return error.InvalidChapterNumber;
+                    };
+                    const outname = try std.fmt.allocPrint(allocator, "{1s}{0c}{2s}{0c}{3d:0>3}.html", .{
+                        std.fs.path.sep,
+                        outdir,
+                        std.fs.path.stem(fname),
+                        chapter,
+                    });
+                    try std.fs.cwd().makePath(std.fs.path.dirname(outname).?);
+                    if (outfile) |o| o.close();
+                    outfile = try std.fs.cwd().createFile(outname, .{});
+                }
+            },
+            .text => {},
+        }
+        if (outfile) |f| try ele.html(f.writer());
     }
 }
 
@@ -61,4 +66,9 @@ pub fn main() !void {
     defer opt.deinit();
 
     for (opt.positional_args.items) |fname| try parseFile(opt.args.output_dir, fname);
+}
+
+test {
+    _ = @import("./Lexer.zig");
+    _ = @import("./Parser.zig");
 }

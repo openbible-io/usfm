@@ -73,8 +73,21 @@ pub fn next(self: *Lexer) !?Token {
     } else if (self.in_attribute) {
         if (next_c == '=') {
             return .{ .start = start, .end = start + 1, .tag = .@"=" };
+        } else if (next_c == '"') {
+            var last_backslash = false;
+            while (true) {
+                const c = self.readByte() catch |err| switch (err) {
+                    error.EndOfStream => break,
+                    else => |e| return e,
+                };
+                if (c == '"' and !last_backslash) {
+                    const end = self.pos;
+                    return .{ .start = start + 1, .end = end - 1, .tag = .id };
+                }
+                last_backslash = c == '\\';
+            }
         }
-        _ = try self.readUntilDelimiters(&[_]u8{ ' ', '=' });
+        _ = try self.readUntilDelimiters(&[_]u8{ ' ', '=', '\\' });
         const end = self.pos;
         return .{ .start = start, .end = end, .tag = .id };
     } else {
@@ -151,7 +164,7 @@ test "two simple tags" {
 
 test "single attribute tag" {
     try expectTokens(
-        \\\word hello |   x-occurences  =   "1" \word*
+        \\\word hello |   x-occurences  =   "1"\word*
     ,
         &[_]Expected{
             .{ .tag = .tag_open, .text = "\\word" },
@@ -159,7 +172,7 @@ test "single attribute tag" {
             .{  .tag = .attribute_start, .text = "|" },
             .{  .tag = .id, .text = "x-occurences" },
             .{  .tag = .@"=", .text = "=" },
-            .{  .tag = .id, .text = "\"1\"" },
+            .{  .tag = .id, .text = "1" },
             .{  .tag = .tag_close, .text = "\\word*" },
         },
     );
@@ -177,6 +190,24 @@ test "empty attribute tag" {
         },
     );
 }
+
+test "attributes with spaces" {
+    try expectTokens(
+        \\\zaln-s |x-lemma="a b"\*\zaln-e\*
+        ,
+        &[_]Expected{
+            .{ .tag = .tag_open },
+            .{ .tag = .attribute_start },
+            .{ .tag = .id, .text = "x-lemma" },
+            .{ .tag = .@"=" },
+            .{ .tag = .id, .text = "a b" },
+            .{ .tag = .tag_close },
+            .{ .tag = .tag_open },
+            .{ .tag = .tag_close },
+        },
+    );
+}
+
 
 test "milestones" {
     try expectTokens(
