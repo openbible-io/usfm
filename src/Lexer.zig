@@ -9,21 +9,21 @@ pub fn init(allocator: Allocator, buffer: []const u8) Lexer {
 
 fn readByte(self: *Lexer) !u8 {
     if (self.pos >= self.buffer.len) return error.EndOfStream;
-    self.pos += 1;
-    return self.buffer[self.pos - 1];
+    defer self.pos += 1;
+    return self.buffer[self.pos];
 }
 
 fn readUntilDelimiters(self: *Lexer, comptime delimiters: []const u8) !usize {
     var len: usize = 0;
     while (true) {
-        const c = self.readByte() catch |err| switch (err) {
+        const byte = self.readByte() catch |err| switch (err) {
             error.EndOfStream => return len + 1,
             else => |e| return e,
         };
         len += 1;
         inline for (delimiters) |d| {
-            if (c == d) {
-                if (c == '*') {
+            if (byte == d) {
+                if (byte == '*') {
                     // Consume *s for ending tags
                     len += 1;
                 } else {
@@ -52,27 +52,38 @@ pub fn eatSpace(self: *Lexer) !void {
     try self.eatSpaceN(std.math.maxInt(usize));
 }
 
-pub fn next(self: *Lexer) !?Token {
+pub fn next(self: *Lexer) !Token {
     try self.eatSpace();
-    const start = self.pos;
-    const next_c = self.readByte() catch |err| {
-        return if (err == error.EndOfStream) null else err;
+    var res = Token{
+        .start = self.pos,
+        .end = self.pos + 1,
+        .tag = .eof,
+    };
+
+    const next_c = self.readByte() catch |err| switch (err) {
+        error.EndOfStream => {
+            res.end = self.pos;
+            return res;
+        },
+        else => return err,
     };
     if (next_c == '\\') {
         self.in_attribute = false;
         _ = try self.readUntilDelimiters(whitespace ++ "*\\");
         if (self.buffer[self.pos - 1] != '*') {
-            const end = self.pos;
-            return .{ .start = start, .end = end, .tag = .tag_open };
+            res.end = self.pos;
+            res.tag = .tag_open;
         } else { // End tag like `\w*` or '\*';
-            return .{ .start = start, .end = self.pos, .tag = .tag_close };
+            res.end = self.pos;
+            res.tag = .tag_close;
         }
     } else if (next_c == '|') {
         self.in_attribute = true;
-        return .{ .start = start, .end = start + 1, .tag = .attribute_start };
+        res.tag = .attribute_start;
     } else if (self.in_attribute) {
         if (next_c == '=') {
-            return .{ .start = start, .end = start + 1, .tag = .@"=" };
+            res.tag = .@"=";
+            return res;
         } else if (next_c == '"') {
             var last_backslash = false;
             while (true) {
@@ -81,25 +92,31 @@ pub fn next(self: *Lexer) !?Token {
                     else => |e| return e,
                 };
                 if (c == '"' and !last_backslash) {
-                    const end = self.pos;
-                    return .{ .start = start + 1, .end = end - 1, .tag = .id };
+                    res.start += 1;
+                    res.end = self.pos - 1;
+                    res.tag = .id;
+                    return res;
                 }
                 last_backslash = c == '\\';
             }
         }
         _ = try self.readUntilDelimiters(&[_]u8{ ' ', '=', '\\' });
-        const end = self.pos;
-        return .{ .start = start, .end = end, .tag = .id };
+        res.end = self.pos;
+        res.tag = .id;
+        return res;
     } else {
         self.in_attribute = false;
         _ = try self.readUntilDelimiters(&[_]u8{ '|', '\\' });
         var end = self.pos - 1;
         while (std.mem.indexOfScalar(u8, whitespace, self.buffer[end])) |_| end -= 1;
-        return .{ .start = start, .end = end + 1, .tag = .text };
+        res.end = end + 1;
+        res.tag = .text;
     }
+
+    return res;
 }
 
-pub fn peek(self: *Lexer) !?Token {
+pub fn peek(self: *Lexer) !Token {
     const pos = self.pos;
     const res = try self.next();
     self.pos = pos;
@@ -121,7 +138,11 @@ fn expectTokens(usfm: []const u8, expected: []const Expected) !void {
     defer actual.deinit();
 
     var lex = Lexer.init(allocator, usfm);
-    while (try lex.next()) |t| try actual.append(t);
+    while (true) {
+        const t = try lex.next();
+        if (t.tag == .eof) break;
+        try actual.append(t);
+    }
 
     if (expected.len != actual.items.len) {
         std.debug.print("expected {d} tokens, got {d}\n", .{ expected.len, actual.items.len });
@@ -134,6 +155,7 @@ fn expectTokens(usfm: []const u8, expected: []const Expected) !void {
     for (expected, actual.items) |e, a| {
         try std.testing.expectEqual(e.tag, a.tag);
         if (e.text) |t| try std.testing.expectEqualStrings(t, lex.view(a));
+        if (e.line) |l| try std.testing.expectEqual(l, a.line);
     }
 }
 
@@ -275,6 +297,7 @@ pub const Token = struct {
         attribute_start,
         id,
         @"=",
+        eof,
     };
     tag: Token.Tag,
     start: usize,

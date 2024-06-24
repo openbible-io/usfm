@@ -5,3 +5,4 @@ zig-out
 dist
 npm
 01-GEN
+*.html
