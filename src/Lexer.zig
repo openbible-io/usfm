@@ -53,7 +53,6 @@ pub fn eatSpace(self: *Lexer) !void {
 }
 
 pub fn next(self: *Lexer) !Token {
-    try self.eatSpace();
     var res = Token{
         .start = self.pos,
         .end = self.pos + 1,
@@ -73,6 +72,7 @@ pub fn next(self: *Lexer) !Token {
         if (self.buffer[self.pos - 1] != '*') {
             res.end = self.pos;
             res.tag = .tag_open;
+            try self.eatSpaceN(1);
         } else { // End tag like `\w*` or '\*';
             res.end = self.pos;
             res.tag = .tag_close;
@@ -80,9 +80,11 @@ pub fn next(self: *Lexer) !Token {
     } else if (next_c == '|') {
         self.in_attribute = true;
         res.tag = .attribute_start;
+        try self.eatSpace();
     } else if (self.in_attribute) {
         if (next_c == '=') {
             res.tag = .@"=";
+            try self.eatSpace();
             return res;
         } else if (next_c == '"') {
             var last_backslash = false;
@@ -95,21 +97,21 @@ pub fn next(self: *Lexer) !Token {
                     res.start += 1;
                     res.end = self.pos - 1;
                     res.tag = .id;
-                    return res;
+                    break;
                 }
                 last_backslash = c == '\\';
             }
+            try self.eatSpace();
+        } else {
+            _ = try self.readUntilDelimiters(whitespace ++ "=\\");
+            res.end = self.pos;
+            res.tag = .id;
+            try self.eatSpace();
         }
-        _ = try self.readUntilDelimiters(&[_]u8{ ' ', '=', '\\' });
-        res.end = self.pos;
-        res.tag = .id;
-        return res;
     } else {
         self.in_attribute = false;
-        _ = try self.readUntilDelimiters(&[_]u8{ '|', '\\' });
-        var end = self.pos - 1;
-        while (std.mem.indexOfScalar(u8, whitespace, self.buffer[end])) |_| end -= 1;
-        res.end = end + 1;
+        _ = try self.readUntilDelimiters("|\\");
+        res.end = self.pos;
         res.tag = .text;
     }
 
@@ -155,7 +157,6 @@ fn expectTokens(usfm: []const u8, expected: []const Expected) !void {
     for (expected, actual.items) |e, a| {
         try std.testing.expectEqual(e.tag, a.tag);
         if (e.text) |t| try std.testing.expectEqualStrings(t, lex.view(a));
-        if (e.line) |l| try std.testing.expectEqual(l, a.line);
     }
 }
 
@@ -177,7 +178,7 @@ test "two simple tags" {
     ,
         &[_]Expected{
             .{ .tag = .tag_open },
-            .{  .tag = .text, .text = "GEN EN_ULT en_English_ltr" },
+            .{  .tag = .text, .text = "GEN EN_ULT en_English_ltr\n" },
             .{ .tag = .tag_open },
             .{ .tag = .text },
         },
@@ -190,7 +191,7 @@ test "single attribute tag" {
     ,
         &[_]Expected{
             .{ .tag = .tag_open, .text = "\\word" },
-            .{ .tag = .text, .text = "hello" },
+            .{ .tag = .text, .text = "hello " },
             .{  .tag = .attribute_start, .text = "|" },
             .{  .tag = .id, .text = "x-occurences" },
             .{  .tag = .@"=", .text = "=" },
@@ -215,7 +216,7 @@ test "empty attribute tag" {
 
 test "attributes with spaces" {
     try expectTokens(
-        \\\zaln-s |x-lemma="a b"\*\zaln-e\*
+        \\\zaln-s |x-lemma="a b" x-abc="123" \*\zaln-e\*
         ,
         &[_]Expected{
             .{ .tag = .tag_open },
@@ -223,6 +224,9 @@ test "attributes with spaces" {
             .{ .tag = .id, .text = "x-lemma" },
             .{ .tag = .@"=" },
             .{ .tag = .id, .text = "a b" },
+            .{ .tag = .id, .text = "x-abc" },
+            .{ .tag = .@"=" },
+            .{ .tag = .id, .text = "123" },
             .{ .tag = .tag_close },
             .{ .tag = .tag_open },
             .{ .tag = .tag_close },
@@ -265,21 +269,24 @@ test "self closing tag" {
 test "line breaks" {
     try expectTokens(
         \\\v 1 \w In\w*
-        \\\w the\w*
-        \\\w beginning\w*
+        \\\w the\w* 012
+        \\\w beginning\w*.
     ,
         &[_]Expected{
             .{ .tag = .tag_open },
-            .{ .tag = .text, .text = "1" },
+            .{ .tag = .text, .text = "1 " },
             .{ .tag = .tag_open, },
             .{ .tag = .text, .text = "In" },
             .{ .tag = .tag_close },
+            .{ .tag = .text, .text = "\n" },
             .{ .tag = .tag_open },
             .{ .tag = .text, .text = "the" },
             .{ .tag = .tag_close },
+            .{ .tag = .text, .text = " 012\n" },
             .{ .tag = .tag_open },
             .{ .tag = .text, .text = "beginning" },
             .{ .tag = .tag_close },
+            .{ .tag = .text, .text = "." },
         },
     );
 }

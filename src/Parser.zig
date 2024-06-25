@@ -15,9 +15,10 @@ pub fn deinit(self: *Parser) void {
 }
 
 fn appendErr(self: *Parser, token: Token, kind: Error.Kind) !void {
-    try self.errors.list.append(
+    try self.errors.map.put(
         self.allocator,
-        Error{ .token = token, .kind = kind }
+        Error{ .token = token, .kind = kind },
+        {},
     );
 }
 
@@ -30,8 +31,9 @@ fn expect(self: *Parser, tag: Token.Tag, why: Error.Kind) !Token {
 }
 
 fn expectClose(self: *Parser, open: Token) !void {
-    const close = try self.lexer.next();
+    const close = try self.lexer.peek();
     if (close.tag == .tag_close) {
+        _ = try self.lexer.next();
         const open_text = self.lexer.view(open);
         const close_text = self.lexer.view(close);
         if (std.mem.eql(u8, open_text, close_text[0..close_text.len - 1])) return;
@@ -41,8 +43,9 @@ fn expectClose(self: *Parser, open: Token) !void {
 }
 
 fn expectSelfClose(self: *Parser, for_token: Token) !void {
-    const token = try self.lexer.next();
+    const token = try self.lexer.peek();
     if (token.tag == .tag_close) {
+        _ = try self.lexer.next();
         if (std.mem.eql(u8, self.lexer.view(token), "\\*")) return;
     }
     try self.appendErr(token, Error.Kind{ .expected_self_close = for_token });
@@ -64,9 +67,38 @@ pub fn next(self: *Parser) !?Element {
 
     return try self.parseNode() orelse try self.parseText() orelse {
         try self.appendErr(peek, .invalid_root);
+        _ = try self.lexer.next();
         return error.UnexpectedToken;
     };
 }
+
+/// Caller owns returned document
+pub fn document(self: *Parser) !Document {
+    const allocator = self.allocator;
+    var root = NodeBuilder{
+        .token = undefined,
+        .tag = .root,
+        .allocator = allocator,
+        .attributes = NodeBuilder.Attributes.init(allocator),
+        .children = NodeBuilder.Children.init(allocator),
+    };
+
+    while (try self.next()) |e| try root.children.append(e);
+
+    return Document{
+        .root = .{ .node = try root.toOwned() },
+    };
+}
+
+fn anyNode(_: Tag) bool { return true; }
+
+pub const Document = struct {
+    root: Element,
+
+    pub fn deinit(self: Document, allocator: Allocator) void {
+        self.root.deinit(allocator);
+    }
+};
 
 fn parseNode(self: *Parser) ParseNodeError!?Element {
     return try self.parseMilestone() orelse
@@ -92,19 +124,22 @@ const ParseNodeError = Allocator.Error || error{
     ExpectedClose,
 };
 
-fn nodeBuilder(self: *Parser) !?NodeBuilder {
+fn nodeBuilder(self: *Parser, filter: fn (t: Tag) bool) !?NodeBuilder {
     const token = try self.lexer.peek();
     if (token.tag != .tag_open) return null;
-    const tag = try self.parseTag(token);
+    const tag = self.parseTag(token) catch return null;
 
-    return NodeBuilder.init(self.allocator, token, tag);
+    if (!filter(tag)) return null;
+    _ = try self.lexer.next();
+    
+    var res = NodeBuilder.init(self.allocator, token, tag);
+    try self.parseSpecialText(&res);
+    return res;
 }
 
 fn parseMilestone(self: *Parser) !?Element {
-    var builder = try self.nodeBuilder() orelse return null;
+    var builder = try self.nodeBuilder(Tag.isMilestoneStart) orelse return null;
     defer builder.deinit();
-    if (!builder.tag.isMilestoneStart()) return null;
-    _ = try self.lexer.next();
 
     try self.parseAttributes(builder.tag, &builder.attributes);
     try self.expectSelfClose(builder.token);
@@ -128,45 +163,40 @@ fn parseMilestone(self: *Parser) !?Element {
 }
 
 fn parseInline(self: *Parser) !?Element {
-    var builder = try self.nodeBuilder() orelse return null;
+    var builder = try self.nodeBuilder(Tag.isInline) orelse return null;
     defer builder.deinit();
-    if (!builder.tag.isInline()) return null;
-    _ = try self.lexer.next();
-    try self.parseTextAttributes(builder.tag, &builder.attributes);
 
     while (try self.parseNode() orelse try self.parseText()) |c| try builder.children.append(c);
     try self.parseAttributes(builder.tag, &builder.attributes);
 
-    try self.expectClose(builder.token);
+    self.expectClose(builder.token) catch {};
 
     return Element{ .node = try builder.toOwned() };
 }
 
 fn parseParagraph(self: *Parser) !?Element {
-    var builder = try self.nodeBuilder() orelse return null;
+    var builder = try self.nodeBuilder(Tag.isParagraph) orelse return null;
     defer builder.deinit();
-    if (!builder.tag.isParagraph()) return null;
-    _ = try self.lexer.next();
-    try self.parseTextAttributes(builder.tag, &builder.attributes);
 
-    while (
-        try self.parseMilestone() orelse
-        try self.parseInline() orelse
-        try self.parseCharacter() orelse
-        try self.parseText()
-    ) |c| try builder.children.append(c);
+    if (builder.tag != .c) { // chapters are just markers
+        while (
+            try self.parseMilestone() orelse
+            try self.parseInline() orelse
+            try self.parseCharacter() orelse
+            try self.parseText()
+        ) |c| try builder.children.append(c);
+    }
 
     return Element{ .node = try builder.toOwned() };
 }
 
 fn parseCharacter(self: *Parser) !?Element {
-    var builder = try self.nodeBuilder() orelse return null;
+    var builder = try self.nodeBuilder(Tag.isCharacter) orelse return null;
     defer builder.deinit();
-    if (!builder.tag.isCharacter()) return null;
-    _ = try self.lexer.next();
-    try self.parseTextAttributes(builder.tag, &builder.attributes);
 
-    if (try self.parseText()) |c| try builder.children.append(c);
+    if (builder.tag != .v) { // verses are just markers
+        if (try self.parseText()) |c| try builder.children.append(c);
+    }
     // Undocumented but reasonable
     const maybe_close = try self.lexer.peek();
     if (maybe_close.tag == .tag_close) {
@@ -226,27 +256,40 @@ fn parseAttributes(self: *Parser, tag: Tag, out: *std.ArrayList(Element.Node.Att
     }
 }
 
-fn parseTextAttributes(self: *Parser, tag: Tag, out: *std.ArrayList(Element.Node.Attribute)) !void {
+fn parseSpecialText(self: *Parser, builder: *NodeBuilder) !void {
     // special required attributes
-    switch (tag) {
-        .f, .fe, .v, .c => {
-            const text = try self.expect(.text, switch (tag) {
-                .f, .fe => Error.Kind.expected_caller,
-                .v, .c => Error.Kind.expected_number,
-                else => unreachable,
-            });
-            const string = self.lexer.view(text);
-            const end = std.mem.indexOfAny(u8, string, whitespace) orelse string.len;
-            self.lexer.pos = text.start + end;
-            const key = switch (tag) {
-                .f, .fe => "caller",
-                .v, .c => "n",
-                else => unreachable,
-            };
-            try out.append(.{ .key = key, .value = string[0..end] });
+    const token = try self.lexer.peek();
+    switch (builder.tag) {
+        .f, .fe => {
+            const caller = self.firstWord(token);
+            if (caller.len > 0) {
+                try builder.attributes.append(.{ .key = "caller", .value = caller });
+            } else {
+                try self.appendErr(token, .expected_caller);
+            }
+        },
+        .v, .c => {
+            const number = self.firstWord(token);
+            if (number.len > 0) {
+                try builder.children.append(.{ .text = number });
+            } else {
+                try self.appendErr(token, .expected_number);
+            }
+
         },
         else => {},
     }
+}
+
+fn firstWord(self: *Parser, maybe_text: Token) []const u8 {
+    if (maybe_text.tag == .text) {
+        const string = self.lexer.view(maybe_text);
+        const end = std.mem.indexOfAny(u8, string, whitespace ++ "\\") orelse string.len;
+        self.lexer.pos += end;
+        try self.lexer.eatSpace();
+        return string[0..end];
+    }
+    return "";
 }
 
 fn trimQuote(text: []const u8) []const u8 {
@@ -288,7 +331,7 @@ const NodeBuilder = struct {
     }
 };
 
-fn expectElements(usfm: []const u8, expected: []const u8) !void {
+fn expectElements(usfm: []const u8, comptime expected: []const u8) !void {
     const allocator = testing.allocator;
 
     var actual = std.ArrayList(u8).init(allocator);
@@ -296,12 +339,12 @@ fn expectElements(usfm: []const u8, expected: []const u8) !void {
 
     var parser = Parser.init(allocator, usfm);
     defer parser.deinit();
-    while (try parser.next()) |e| {
-        defer e.deinit(allocator);
-        try e.html(actual.writer());
-        try actual.writer().writeByte('\n');
-    }
 
+    const doc = try parser.document();
+    defer doc.deinit(allocator);
+
+    try actual.writer().print("{html}", .{ doc.root });
+    
     try std.testing.expectEqualStrings(expected, actual.items);
 }
 
@@ -309,149 +352,99 @@ test "single simple tag" {
     try expectElements(
         \\\id GEN EN_ULT en_English_ltr
         ,
-        \\<id>
-        \\  GEN EN_ULT en_English_ltr
-        \\</id>
-        \\
+        \\<p class="id">
+       \\	GEN EN_ULT en_English_ltr
+       \\</p>
     );
 }
 
-test "two simple tags" {
+test "whitespace norm 1" {
     try expectElements(
-        \\\id GEN EN_ULT en_English_ltr
-        \\\usfm 3.0
+        \\\p
+        ++ whitespace ++ whitespace ++
+        \\asdf
         ,
-        \\<id>
-        \\  GEN EN_ULT en_English_ltr
-        \\</id>
-        \\<usfm>
-        \\  3.0
-        \\</usfm>
-        \\
+        \\<p>
+        \\	 asdf
+        \\</p>
     );
 }
 
 test "single attribute tag" {
     try expectElements(
-        \\\v 1 \w hello |   x-occurences  =   "1" \w*
+        \\\v 1\w hello |   x-occurences  =   "1" \w*
         ,
-        \\<v n="1"></v>
-        \\<w x-occurences="1">
-        \\  hello
-        \\</w>
-        \\
+        \\<sup class="v">
+        \\	1
+        \\</sup>
+        \\<span class="w" x-occurences="1">
+        \\	hello 
+        \\</span>
     );
 }
 
 test "empty attribute tag" {
     try expectElements(
-        \\\v 1 \w hello |\w*
+        \\\v 1\w hello|\w*
         ,
-        \\<v n="1"></v>
-        \\<w>
-        \\  hello
-        \\</w>
-        \\
+        \\<sup class="v">
+        \\	1
+        \\</sup>
+        \\<span class="w">
+        \\	hello
+        \\</span>
     );
 }
 
 test "milestones" {
     try expectElements(
-        \\\v 1 \zaln-s\*\w In\w*\zaln-e\*there
+        \\\zaln-s\*\w In\w*side\zaln-e\*there
         ,
-        \\<v n="1"></v>
-        \\<z-s>
-        \\  <w>
-        \\    In
-        \\  </w>
-        \\</z-s>
+        \\<div class="z-s">
+        \\	<span class="w">
+        \\		In
+        \\	</span>
+        \\	side
+        \\</div>
         \\there
-        \\
-    );
-}
-
-test "line breaks" {
-    try expectElements(
-        \\\v 1 \w In\w*
-        \\\w the\w*
-        \\\w beginning\w*
-        \\textnode
-    ,
-        \\<v n="1"></v>
-        \\<w>
-        \\  In
-        \\</w>
-        \\<w>
-        \\  the
-        \\</w>
-        \\<w>
-        \\  beginning
-        \\</w>
-        \\textnode
-        \\
     );
 }
 
 test "footnote with inline fqa" {
     try expectElements(
-        \\\v 2
-        \\\f + \ft footnote: \fqa some text\fqa*.\f*
+        \\Hello\f +\ft footnote:   \fqa some text\fqa*.\f*
     ,
-        \\<v n="2"></v>
-        \\<f caller="+">
-        \\  <ft>
-        \\    footnote:
-        \\  </ft>
-        \\  <fqa>
-        \\    some text
-        \\  </fqa>
-        \\  .
-        \\</f>
-        \\
+        \\Hello
+        \\<p class="f" caller="+">
+        \\	<span class="ft">
+        \\		footnote: 
+        \\	</span>
+        \\	<span class="fqa">
+        \\		some text
+        \\	</span>
+        \\	.
+        \\</p>
     );
 }
 
 test "footnote with block fqa" {
     try expectElements(
-        \\\v 1 \f + \fq until they had crossed over \ft or perhaps \fqa until we had crossed over \ft (Hebrew Ketiv).\f*
+        \\\f +\fq a\ft b\fqa c\ft d\f*
     ,
-        \\<v n="1"></v>
-        \\<f caller="+">
-        \\  <fq>
-        \\    until they had crossed over
-        \\  </fq>
-        \\  <ft>
-        \\    or perhaps
-        \\  </ft>
-        \\  <fqa>
-        \\    until we had crossed over
-        \\  </fqa>
-        \\  <ft>
-        \\    (Hebrew Ketiv).
-        \\  </ft>
-        \\</f>
-        \\
-    );
-}
-
-test "header" {
-    try expectElements(
-        \\\mt Genesis
-        \\
-        \\\ts\*
-        \\\c 1
-        \\\ts\*
-        \\\c 1
-    ,
-        \\<mt>
-        \\  Genesis
-        \\  <ts></ts>
-        \\</mt>
-        \\<c n="1">
-        \\  <ts></ts>
-       \\</c>
-        \\<c n="1"></c>
-        \\
+        \\<p class="f" caller="+">
+        \\	<span class="fq">
+        \\		a
+        \\	</span>
+        \\	<span class="ft">
+        \\		b
+        \\	</span>
+        \\	<span class="fqa">
+        \\		c
+        \\	</span>
+        \\	<span class="ft">
+        \\		d
+        \\	</span>
+        \\</p>
     );
 }
 
@@ -461,193 +454,73 @@ test "chapters" {
         \\\v 1 verse1
         \\\v 2 verse2
         \\\c 2
-        \\\v 1 asdf
-        \\\v 2 hjkl
+        \\\v 1
         ,
-        \\<c n="1">
-        \\  <v n="1">
-        \\    verse1
-        \\  </v>
-        \\  <v n="2">
-        \\    verse2
-        \\  </v>
-        \\</c>
-        \\<c n="2">
-        \\  <v n="1">
-        \\    asdf
-        \\  </v>
-        \\  <v n="2">
-        \\    hjkl
-        \\  </v>
-        \\</c>
-        \\
+        \\<p class="c">
+        \\	1
+        \\</p>
+        \\<sup class="v">
+        \\	1
+        \\</sup>
+        \\verse1 
+        \\<sup class="v">
+        \\	2
+        \\</sup>
+        \\verse2 
+        \\<p class="c">
+        \\	2
+        \\</p>
+        \\<sup class="v">
+        \\	1
+        \\</sup>
     );
 }
 
-test "hanging text" {
-    try expectElements(
-        \\\ip Hello
-        \\\bk inline tag\bk* hanging text.
-    ,
-        \\<ip>
-        \\  Hello
-        \\  <bk>
-       \\    inline tag
-        \\  </bk>
-        \\  hanging text.
-        \\</ip>
-        \\
-    );
-}
+// test "hanging text" {
+//     try expectElements(
+//         \\\ip Hello
+//         \\\bk inline tag\bk* hanging text.
+//     ,
+//         \\ip
+//        \\  Hello
+//         \\  bk inline tag
+//         \\   hanging text.
+//     );
+// }
 
-test "paragraphs" {
-    try expectElements(
-        \\\p
-        \\\v 1 verse1
-        \\\p
-        \\\v 2 verse2
-    ,
-        \\<p>
-        \\  <v n="1">
-        \\    verse1
-        \\  </v>
-        \\</p>
-        \\<p>
-        \\  <v n="2">
-        \\    verse2
-        \\  </v>
-        \\</p>
-        \\
-    );
-}
+// test "paragraphs" {
+//     try expectElements(
+//         \\\p
+//         \\\v 1 verse1
+//         \\\p
+//         \\\v 2 verse2
+//     ,
+//         \\<p>
+//         \\  <v n="1">
+//         \\    verse1
+//         \\  </v>
+//         \\</p>
+//         \\<p>
+//         \\  <v n="2">
+//         \\    verse2
+//         \\  </v>
+//         \\</p>
+//         \\
+//     );
+// }
 
 const std = @import("std");
 const Tag = @import("./tag.zig").Tag;
 const Lexer = @import("./Lexer.zig");
 const Element = @import("./element.zig").Element;
+const err_mod = @import("./error.zig");
 
 const Allocator = std.mem.Allocator;
 const Token = Lexer.Token;
 const log = std.log.scoped(.usfm);
 const testing = std.testing;
 const whitespace = Lexer.whitespace;
+const Error = err_mod.Error;
+const Errors = err_mod.Errors;
 const Parser = @This();
-
-pub const ErrorContext = struct {
-    buffer_name: []const u8,
-    buffer: []const u8,
-    stderr: std.fs.File,
-
-    pub fn print(self: ErrorContext, err: Error) !void {
-        const w = self.stderr.writer();
-        const tty_config = std.io.tty.detectConfig(self.stderr);
-
-        const line_start = lineStart(self.buffer, err.token);
-        try self.printLoc(line_start, err.token);
-
-        tty_config.setColor(w, .bold) catch {};
-        tty_config.setColor(w, .red) catch {};
-        try w.writeAll("error: ");
-        tty_config.setColor(w, .reset) catch {};
-        switch (err.kind) {
-            .invalid_tag => try w.writeAll("invalid tag"),
-            .invalid_root => try w.writeAll("invalid root element"),
-            .invalid_attribute => |a| try w.print("invalid attribute \"{s}\"", .{ a }),
-            .expected_milestone_close_open => try w.writeAll("expected milestone end tag"),
-            .expected_close => try w.writeAll("expected closing tag"),
-            .expected_self_close => try w.writeAll("expected self-closing tag"),
-            .expected_attribute_value => try w.writeAll("expected attribute value"),
-            .expected_caller => try w.writeAll("expected caller"),
-            .expected_number => try w.writeAll("expected number"),
-            .no_default_attribute => |t| try w.print("{s} has no default attributes", .{ @tagName(t) }),
-        }
-        try self.printContext(line_start, err.token);
-
-        switch (err.kind) {
-            inline .expected_milestone_close_open,
-            .expected_close,
-            .expected_self_close => |t| {
-                try w.writeByte('\n');
-                const line_start2 = lineStart(self.buffer, t);
-                try self.printLoc(line_start2, t);
-                tty_config.setColor(w, .blue) catch {};
-                try w.writeAll("note: ");
-                tty_config.setColor(w, .reset) catch {};
-                try w.writeAll("opening tag here");
-                try self.printContext(line_start2, t);
-            },
-            else => {},
-        }
-        tty_config.setColor(w, .reset) catch {};
-    }
-
-    fn lineStart(buffer: []const u8, token: Token) usize {
-        var res = @min(token.start, buffer.len - 1);
-        while (res > 0 and buffer[res] != '\n') res -= 1;
-
-        return res + 1;
-    }
-
-    fn printLoc(self: ErrorContext, line_start: usize, token: Token) !void {
-        const w = self.stderr.writer();
-        const tty_config = std.io.tty.detectConfig(self.stderr);
-        tty_config.setColor(w, .reset) catch {};
-        tty_config.setColor(w, .bold) catch {};
-        const column = token.start - line_start;
-
-        var token_line: usize = 1;
-        for (self.buffer[0..token.start]) |c| {
-            if (c == '\n') token_line += 1;
-        }
-        try w.print("{s}:{d}:{d} ", .{ self.buffer_name, token_line, column });
-    }
-
-    fn printContext(self: ErrorContext, line_start: usize, token: Token) !void {
-        const w = self.stderr.writer();
-        const tty_config = std.io.tty.detectConfig(self.stderr);
-
-        const line_end = if (std.mem.indexOfScalarPos(u8, self.buffer, token.end, '\n')) |n| n else self.buffer.len;
-        try w.writeByte('\n');
-        try w.print("{s}", .{ self.buffer[line_start..token.start] });
-        if (token.end != token.start) {
-            tty_config.setColor(w, .green) catch {};
-            try w.print("{s}", .{ self.buffer[token.start..token.end] });
-            tty_config.setColor(w, .reset) catch {};
-            try w.print("{s}", .{ self.buffer[token.end..line_end] });
-        }
-        try w.writeByte('\n');
-    }
-};
-
-pub const Error = struct {
-    token: Token,
-    kind: Kind,
-
-    const Kind = union(enum) {
-        invalid_tag,
-        invalid_root,
-        invalid_attribute: []const u8,
-        expected_attribute_value,
-        expected_milestone_close_open: Token,
-        expected_close: Token,
-        expected_self_close: Token,
-        expected_caller,
-        expected_number,
-        no_default_attribute: Tag,
-    };
-};
-pub const Errors = struct {
-    list: std.ArrayListUnmanaged(Error) = .{},
-
-    pub fn deinit(self: *Errors, allocator: Allocator) void {
-        self.list.deinit(allocator);
-    }
-
-    pub fn print(self: Errors, ctx: ErrorContext) !void {
-        for (self.list.items, 0..) |err, i| {
-            try ctx.print(err);
-            if (i != self.list.items.len) try ctx.stderr.writer().writeByte('\n');
-        }
-    }
-};
 

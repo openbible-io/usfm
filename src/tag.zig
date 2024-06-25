@@ -2,6 +2,8 @@ const std = @import("std");
 const testing = std.testing;
 
 pub const Tag = union(enum) {
+    root, // used by document
+
     // identification
     id, // file id
     usfm, // version

@@ -2,6 +2,7 @@ const std = @import("std");
 const simargs = @import("simargs");
 const Parser = @import("./Parser.zig");
 const Lexer = @import("./Lexer.zig");
+const ErrorContext = @import("./error.zig").ErrorContext;
 const Element = Parser.Element;
 const log = std.log.scoped(.usfm);
 
@@ -10,8 +11,6 @@ pub const std_options = .{
 };
 
 fn parseFile(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u8) !void {
-    std.debug.print("{s}\n", .{fname});
-
     var file = try std.fs.cwd().openFile(fname, .{});
     defer file.close();
 
@@ -23,16 +22,17 @@ fn parseFile(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u8
     var outfile: ?std.fs.File = null;
     defer if (outfile) |o| o.close();
 
-    const error_context = Parser.ErrorContext{
+    const error_context = ErrorContext{
         .buffer_name = fname,
         .buffer = usfm,
         .stderr = std.io.getStdErr(),
     };
+    var n_chapters: usize = 0;
 
     while (true) {
         const ele = parser.next() catch {
-            try parser.errors.print(error_context);
-            parser.errors.list.clearRetainingCapacity();
+            try parser.errors.print(error_context, n_chapters);
+            parser.errors.map.clearRetainingCapacity();
             continue;
         } orelse break;
         // We only care about chapters
@@ -52,12 +52,15 @@ fn parseFile(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u8
                     try std.fs.cwd().makePath(std.fs.path.dirname(outname).?);
                     if (outfile) |o| o.close();
                     outfile = try std.fs.cwd().createFile(outname, .{});
+                    n_chapters += 1;
                 }
             },
             .text => {},
         }
         if (outfile) |f| try ele.html(f.writer());
     }
+
+    std.debug.print("{s} -> {s}{c}{s}/{{001..{d:0>3}}}.html\n", .{fname, outdir, std.fs.path.sep, std.fs.path.stem(fname), n_chapters,});
 }
 
 pub fn main() !void {
