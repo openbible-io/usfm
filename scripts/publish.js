@@ -6,12 +6,12 @@ const { execSync } = require('child_process');
 
 const scope = '@openbible';
 const name = `${scope}/usfm`;
+const repository = 'https://github.com/openbible-io/usfm';
 const packages_dir = "npm";
 const version = fs.readFileSync('build.zig.zon', 'utf8').match(/.version = "(.*)"/)[1]
 console.log('publishing', version);
 
 const zigTargets = [
-	'arm-linux',
 	'aarch64-linux',
 	'x86_64-linux',
 	'aarch64-macos',
@@ -54,7 +54,9 @@ function buildTarget(t) {
 		name: packageName(t),
 		version,
 		description: `${t} target of usfm, a usfm to json parser.`,
-		repository: 'https://github.com/openbible-io/usfm',
+		repository: {
+			url: `git+${repository}.git`,
+		},
 		license: 'MIT',
 		preferUnplugged: true, // Keeps yarn from compressing binary
 		engines: { node: '>=12' },
@@ -74,7 +76,7 @@ function buildRoot() {
 		name,
 		version,
 		description: `A usfm to json parser written in zig.`,
-		repository: 'https://github.com/openbible-io/usfm',
+		repository,
 		license: 'MIT',
 		engines: {
 			node: '>=12',

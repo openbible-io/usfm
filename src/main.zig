@@ -14,7 +14,7 @@ fn parseFile2(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u
     var file = try std.fs.cwd().openFile(fname, .{});
     defer file.close();
 
-    const usfm = try file.readToEndAlloc(allocator, 1 << 32);
+    const usfm = try file.readToEndAlloc(allocator, 1 << 31);
 
     var parser = Parser.init(allocator, usfm);
     defer parser.deinit();

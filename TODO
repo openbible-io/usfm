@@ -4,7 +4,8 @@
 - [x] proper HTML
 - [x] speed
 - [x] multithreading
-- [ ] revise mirrors
+- [x] revise mirrors
+	- [x] --ff-only
 - [ ] upload!
 - [ ] layers
 	- [ ] footnotes
