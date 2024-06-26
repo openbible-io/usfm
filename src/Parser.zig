@@ -83,7 +83,10 @@ pub fn document(self: *Parser) !Document {
         .children = NodeBuilder.Children.init(allocator),
     };
 
-    while (try self.next()) |e| try root.children.append(e);
+    while (true) {
+        const e = self.next() catch continue orelse break;
+        try root.children.append(e);
+    }
 
     return Document{
         .root = .{ .node = try root.toOwned() },
@@ -476,38 +479,27 @@ test "chapters" {
     );
 }
 
-// test "hanging text" {
-//     try expectElements(
-//         \\\ip Hello
-//         \\\bk inline tag\bk* hanging text.
-//     ,
-//         \\ip
-//        \\  Hello
-//         \\  bk inline tag
-//         \\   hanging text.
-//     );
-// }
-
-// test "paragraphs" {
-//     try expectElements(
-//         \\\p
-//         \\\v 1 verse1
-//         \\\p
-//         \\\v 2 verse2
-//     ,
-//         \\<p>
-//         \\  <v n="1">
-//         \\    verse1
-//         \\  </v>
-//         \\</p>
-//         \\<p>
-//         \\  <v n="2">
-//         \\    verse2
-//         \\  </v>
-//         \\</p>
-//         \\
-//     );
-// }
+test "paragraphs" {
+    try expectElements(
+        \\\p
+        \\\v 1 verse1
+        \\\p
+        \\\v 2 verse2
+    ,
+        \\<p>
+        \\	<sup class="v">
+        \\		1
+        \\	</sup>
+        \\	verse1 
+        \\</p>
+        \\<p>
+        \\	<sup class="v">
+        \\		2
+        \\	</sup>
+        \\	verse2
+        \\</p>
+    );
+}
 
 const std = @import("std");
 const Tag = @import("./tag.zig").Tag;

@@ -29,17 +29,17 @@ fn parseFile(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u8
     };
     var n_chapters: usize = 0;
 
-    while (true) {
-        const ele = parser.next() catch {
-            try parser.errors.print(error_context, n_chapters);
-            parser.errors.map.clearRetainingCapacity();
-            continue;
-        } orelse break;
+    const doc = try parser.document();
+    defer doc.deinit(allocator);
+
+    try parser.errors.print(error_context, null);
+
+    for (doc.root.node.children) |ele| {
         // We only care about chapters
         switch (ele) {
             .node => |n| {
                 if (n.tag == .c) {
-                    const chapter = std.fmt.parseInt(u8, n.attributes[0].value, 10) catch {
+                    const chapter = std.fmt.parseInt(u8, n.children[0].text, 10) catch {
                         log.err("could not parse chapter number {s}", .{n.attributes[0].value});
                         return error.InvalidChapterNumber;
                     };
@@ -57,7 +57,9 @@ fn parseFile(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u8
             },
             .text => {},
         }
-        if (outfile) |f| try ele.html(f.writer());
+        if (outfile) |f| {
+            try f.writer().print("{html}", .{ ele });
+        }
     }
 
     std.debug.print("{s} -> {s}{c}{s}/{{001..{d:0>3}}}.html\n", .{fname, outdir, std.fs.path.sep, std.fs.path.stem(fname), n_chapters,});

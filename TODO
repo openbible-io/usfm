@@ -1,7 +1,7 @@
 - [x] error message arraylist
 - [x] insert self-closing tags according to some heuristic (copy HTML?)
 	- [ ] error classes (recoverable = warning)
-- [ ] proper HTML
+- [x] proper HTML
 - [ ] speed
 - [ ] multithreading
 - [ ] revise mirrors
