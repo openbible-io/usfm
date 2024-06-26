@@ -10,7 +10,7 @@ pub const std_options = .{
     .log_level = .warn,
 };
 
-fn parseFile(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u8) !void {
+fn parseFile2(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u8) !void {
     var file = try std.fs.cwd().openFile(fname, .{});
     defer file.close();
 
@@ -65,6 +65,16 @@ fn parseFile(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u8
     std.debug.print("{s} -> {s}{c}{s}/{{001..{d:0>3}}}.html\n", .{fname, outdir, std.fs.path.sep, std.fs.path.stem(fname), n_chapters,});
 }
 
+fn parseFile(outdir: []const u8, fname: []const u8) void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    parseFile2(allocator, outdir, fname) catch |e| {
+        std.debug.print("{}\n", .{ e });
+        std.process.exit(1);
+    };
+}
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -81,7 +91,15 @@ pub fn main() !void {
     }, "[file]", null);
     defer opt.deinit();
 
-    for (opt.positional_args.items) |fname| try parseFile(allocator, opt.args.output_dir, fname);
+    var thread_pool: std.Thread.Pool = undefined;
+    try thread_pool.init(.{ .allocator = allocator });
+    defer thread_pool.deinit();
+    var wg = std.Thread.WaitGroup{};
+
+    for (opt.positional_args.items) |fname| {
+        thread_pool.spawnWg(&wg, parseFile, .{ opt.args.output_dir, fname });
+    }
+    thread_pool.waitAndWork(&wg);
 }
 
 test {

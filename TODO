@@ -2,7 +2,7 @@
 - [x] insert self-closing tags according to some heuristic (copy HTML?)
 	- [ ] error classes (recoverable = warning)
 - [x] proper HTML
-- [ ] speed
+- [x] speed
 - [ ] multithreading
 - [ ] revise mirrors
 - [ ] upload!
