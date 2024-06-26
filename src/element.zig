@@ -71,7 +71,6 @@ const HtmlFormatter = struct {
                 '&' => try w.writeAll("&amp;"),
                 '<' => try w.writeAll("&lt;"),
                 '>' => try w.writeAll("&gt;"),
-                '"' => try w.writeAll("&quot;"),
                 else => |c2| try w.writeByte(c2),
             }
         }
