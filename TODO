@@ -3,6 +3,8 @@
 	- [ ] error classes (recoverable = warning)
 - [x] proper HTML
 - [x] speed
-- [ ] multithreading
+- [x] multithreading
 - [ ] revise mirrors
 - [ ] upload!
+
+- [ ] footnotes

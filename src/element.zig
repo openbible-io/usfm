@@ -37,7 +37,7 @@ pub const Element = union(enum) {
         comptime fmt: []const u8,
         options: std.fmt.FormatOptions,
         writer: anytype,
-    ) (@TypeOf(writer).Error || error{Range})!void {
+    ) @TypeOf(writer).Error!void {
         _ = options;
 
         if (std.mem.eql(u8, "html", fmt)) {
@@ -74,11 +74,14 @@ const HtmlFormatter = struct {
         var tag: ?[]const u8 = null;
 
         switch (node.tag) {
+            .p => {
+                tag = "p";
+            },
             .v => {
                 tag = "sup";
             },
-            .w => {},
-            .c => return,
+            .w, .root => {},
+            .c, .f, .fe => return,
             else => |t| {
                 if (t.isParagraph()) tag = "p";
                 if (t.isInline() or node.tag.isCharacter()) tag = "span";
@@ -90,13 +93,13 @@ const HtmlFormatter = struct {
             try w.print("<{s}", .{ t });
             if (class) |c| try w.print(" class=\"{s}\"", .{ c });
 
-            if (node.attributes.len > 0) {
-                try w.writeAll(" ");
-                for (node.attributes, 0..) |a, i| {
-                    try w.print("{s}=\"{s}\"", .{ a.key, a.value });
-                    if (i != node.attributes.len - 1) try w.writeByte(' ');
-                }
-            }
+            // if (node.attributes.len > 0) {
+            //     try w.writeAll(" ");
+            //     for (node.attributes, 0..) |a, i| {
+            //         try w.print("{s}=\"{s}\"", .{ a.key, a.value });
+            //         if (i != node.attributes.len - 1) try w.writeByte(' ');
+            //     }
+            // }
             try w.writeAll(">");
         }
 

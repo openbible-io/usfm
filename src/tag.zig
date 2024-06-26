@@ -322,9 +322,6 @@ pub const Tag = union(enum) {
             .lim,
             // tables
             .tr,
-            // footnotes (not paragraphs in spec)
-            .f,
-            .fe,
             // cross references
             .x,
             // spacing and breaks

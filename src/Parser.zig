@@ -355,9 +355,8 @@ test "single simple tag" {
     try expectElements(
         \\\id GEN EN_ULT en_English_ltr
         ,
-        \\<p class="id">
-       \\	GEN EN_ULT en_English_ltr
-       \\</p>
+        \\<p class="id">GEN EN_ULT en_English_ltr</p>
+        \\
     );
 }
 
@@ -367,22 +366,16 @@ test "whitespace norm 1" {
         ++ whitespace ++ whitespace ++
         \\asdf
         ,
-        \\<p>
-        \\	 asdf
-        \\</p>
+        \\<p> asdf</p>
+        \\
     );
 }
 
 test "single attribute tag" {
     try expectElements(
-        \\\v 1\w hello |   x-occurences  =   "1" \w*
+        \\\v 1\qs hello |   x-occurences  =   "1" \qs*
         ,
-        \\<sup class="v">
-        \\	1
-        \\</sup>
-        \\<span class="w" x-occurences="1">
-        \\	hello 
-        \\</span>
+        \\<sup>1</sup><span class="qs">hello </span>
     );
 }
 
@@ -390,26 +383,15 @@ test "empty attribute tag" {
     try expectElements(
         \\\v 1\w hello|\w*
         ,
-        \\<sup class="v">
-        \\	1
-        \\</sup>
-        \\<span class="w">
-        \\	hello
-        \\</span>
+        \\<sup>1</sup>hello
     );
 }
 
 test "milestones" {
     try expectElements(
-        \\\zaln-s\*\w In\w*side\zaln-e\*there
+        \\\zaln-s\*\w In \w*side\zaln-e\* there
         ,
-        \\<div class="z-s">
-        \\	<span class="w">
-        \\		In
-        \\	</span>
-        \\	side
-        \\</div>
-        \\there
+        \\In side there
     );
 }
 
@@ -418,15 +400,6 @@ test "footnote with inline fqa" {
         \\Hello\f +\ft footnote:   \fqa some text\fqa*.\f*
     ,
         \\Hello
-        \\<p class="f" caller="+">
-        \\	<span class="ft">
-        \\		footnote: 
-        \\	</span>
-        \\	<span class="fqa">
-        \\		some text
-        \\	</span>
-        \\	.
-        \\</p>
     );
 }
 
@@ -434,70 +407,21 @@ test "footnote with block fqa" {
     try expectElements(
         \\\f +\fq a\ft b\fqa c\ft d\f*
     ,
-        \\<p class="f" caller="+">
-        \\	<span class="fq">
-        \\		a
-        \\	</span>
-        \\	<span class="ft">
-        \\		b
-        \\	</span>
-        \\	<span class="fqa">
-        \\		c
-        \\	</span>
-        \\	<span class="ft">
-        \\		d
-        \\	</span>
-        \\</p>
-    );
-}
-
-test "chapters" {
-    try expectElements(
-        \\\c 1
-        \\\v 1 verse1
-        \\\v 2 verse2
-        \\\c 2
-        \\\v 1
-        ,
-        \\<p class="c">
-        \\	1
-        \\</p>
-        \\<sup class="v">
-        \\	1
-        \\</sup>
-        \\verse1 
-        \\<sup class="v">
-        \\	2
-        \\</sup>
-        \\verse2 
-        \\<p class="c">
-        \\	2
-        \\</p>
-        \\<sup class="v">
-        \\	1
-        \\</sup>
+    ""
     );
 }
 
 test "paragraphs" {
     try expectElements(
+        \\\c 1
         \\\p
         \\\v 1 verse1
         \\\p
         \\\v 2 verse2
     ,
-        \\<p>
-        \\	<sup class="v">
-        \\		1
-        \\	</sup>
-        \\	verse1 
-        \\</p>
-        \\<p>
-        \\	<sup class="v">
-        \\		2
-        \\	</sup>
-        \\	verse2
-        \\</p>
+        \\<p><sup>1</sup>verse1 </p>
+        \\<p><sup>2</sup>verse2</p>
+        \\
     );
 }
 
