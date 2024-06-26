@@ -266,7 +266,7 @@ fn parseSpecialText(self: *Parser, builder: *NodeBuilder) !void {
         .f, .fe => {
             const caller = self.firstWord(token);
             if (caller.len > 0) {
-                try builder.attributes.append(.{ .key = "caller", .value = caller });
+                try builder.children.append(.{ .text = caller });
             } else {
                 try self.appendErr(token, .expected_caller);
             }
@@ -278,7 +278,6 @@ fn parseSpecialText(self: *Parser, builder: *NodeBuilder) !void {
             } else {
                 try self.appendErr(token, .expected_number);
             }
-
         },
         else => {},
     }
@@ -407,7 +406,7 @@ test "footnote with block fqa" {
     try expectElements(
         \\\f +\fq a\ft b\fqa c\ft d\f*
     ,
-    ""
+        ""
     );
 }
 

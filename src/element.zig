@@ -65,14 +65,21 @@ const HtmlFormatter = struct {
             defer last_space = is_whitespace;
             if (is_whitespace and last_space) continue;
 
-            try w.writeByte(if (is_whitespace) ' ' else c);
+            if (is_whitespace) {
+                try w.writeByte(' ');
+            } else switch (c) {
+                '&' => try w.writeAll("&amp;"),
+                '<' => try w.writeAll("&lt;"),
+                '>' => try w.writeAll("&gt;"),
+                '"' => try w.writeAll("&quot;"),
+                else => |c2| try w.writeByte(c2),
+            }
         }
     }
 
     fn fmtNode(self: *HtmlFormatter, w: anytype, node: Element.Node) !void {
         var class: ?[]const u8 = null;
         var tag: ?[]const u8 = null;
-
         switch (node.tag) {
             .p => {
                 tag = "p";
@@ -81,10 +88,28 @@ const HtmlFormatter = struct {
                 tag = "sup";
             },
             .w, .root => {},
-            .c, .f, .fe => return,
+            .f, .fe => {
+                // if (node.children.len < 2) return;
+
+                // const popovertarget = "text_chapter_0";
+                // const anchor_name = "anchor_" ++ popovertarget;
+                // try w.print("<sup class=\"{s}\"><button popovertarget=\"{s}\">", .{ @tagName(node.tag), anchor_name, popovertarget });
+                // try self.fmt(w, node.children[0]);
+                // try w.print("</button></sup><span popover id=\"{s}\">", .{ popovertarget });
+
+                // for (node.children[1..]) |c| try self.fmt(w, c);
+
+                // try w.writeAll("</span>");
+
+                return;
+            },
+            .c => return,
             else => |t| {
-                if (t.isParagraph()) tag = "p";
-                if (t.isInline() or node.tag.isCharacter()) tag = "span";
+                if (t.isParagraph()) {
+                    tag = "p";
+                } else if (t.isInline() or node.tag.isCharacter()) {
+                    tag = "span";
+                }
                 class = @tagName(t);
             }
         }
