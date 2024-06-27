@@ -6,7 +6,8 @@
 - [x] multithreading
 - [x] revise mirrors
 	- [x] --ff-only
-- [ ] upload!
+- [x] upload!
+- [x] manifest
 - [ ] layers
 	- [ ] footnotes
 	- [ ] strongs

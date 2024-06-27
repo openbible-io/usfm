@@ -32,25 +32,14 @@ pub const Element = union(enum) {
         }
     }
 
-    pub fn format(
-        self: Element,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) @TypeOf(writer).Error!void {
-        _ = options;
-
-        if (std.mem.eql(u8, "html", fmt)) {
-            var formatter = HtmlFormatter{}; 
-            try formatter.fmt(writer, self);
-        } else {
-            try writer.writeAll("Element{}");
-        }
+    pub fn html(self: Element, writer: anytype) !void {
+        var formatter = HtmlFormatter{};
+        try formatter.fmt(writer, self);
     }
 };
 
 const HtmlFormatter = struct {
-    pub fn fmt(self: *HtmlFormatter, w: anytype, ele: Element) @TypeOf(w).Error!void {
+    pub fn fmt(self: *HtmlFormatter, w: anytype, ele: Element) (@TypeOf(w).Error || Error)!void {
         return switch (ele) {
             .node => |n| try self.fmtNode(w, n),
             .text => |t| try self.fmtText(w, t),
@@ -76,16 +65,14 @@ const HtmlFormatter = struct {
         }
     }
 
+    const Error = error{InvalidHeadingLevel};
+
     fn fmtNode(self: *HtmlFormatter, w: anytype, node: Element.Node) !void {
         var class: ?[]const u8 = null;
         var tag: ?[]const u8 = null;
         switch (node.tag) {
-            .p => {
-                tag = "p";
-            },
-            .v => {
-                tag = "sup";
-            },
+            .p =>  tag = "p",
+            .v =>  tag = "sup",
             .w, .root => {},
             .f, .fe => {
                 // if (node.children.len < 2) return;
@@ -103,8 +90,23 @@ const HtmlFormatter = struct {
                 return;
             },
             .c => return,
+            inline .mt, .imt => |lvl| switch (lvl) {
+                0, 1 => tag = "h1",
+                2 => tag = "h2",
+                3 => tag = "h3",
+                4 => tag = "h4",
+                5 => tag = "h5",
+                6 => tag = "h6",
+                else => return error.InvalidHeadingLevel,
+            },
+            .em => tag = "em",
+            .bd => tag = "b",
+            .it => tag = "i",
+            .sup => tag = "sup",
             else => |t| {
-                if (t.isParagraph()) {
+                if (t.isIdentification()) {
+                    return;
+                } else if (t.isParagraph()) {
                     tag = "p";
                 } else if (t.isInline() or node.tag.isCharacter()) {
                     tag = "span";

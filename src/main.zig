@@ -49,6 +49,7 @@ fn parseFile2(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u
                         std.fs.path.stem(fname),
                         chapter,
                     });
+                    defer allocator.free(outname);
                     try std.fs.cwd().makePath(std.fs.path.dirname(outname).?);
                     if (outfile) |o| o.close();
                     outfile = try std.fs.cwd().createFile(outname, .{});
@@ -57,12 +58,24 @@ fn parseFile2(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u
             },
             .text => {},
         }
-        if (outfile) |f| {
-            try f.writer().print("{html}", .{ ele });
-        }
+        if (outfile) |f| try ele.html(f.writer());
     }
 
-    std.debug.print("{s} -> {s}{c}{s}/{{001..{d:0>3}}}.html\n", .{fname, outdir, std.fs.path.sep, std.fs.path.stem(fname), n_chapters,});
+    if (n_chapters > 0) {
+        std.debug.print("{s} -> {s}{c}{s}/{{001..{d:0>3}}}.html\n", .{fname, outdir, std.fs.path.sep, std.fs.path.stem(fname), n_chapters,});
+    } else {
+        const outname = try std.fmt.allocPrint(allocator, "{s}{c}{s}.html", .{
+            outdir,
+            std.fs.path.sep,
+            std.fs.path.stem(fname),
+        });
+        defer allocator.free(outname);
+        try std.fs.cwd().makePath(std.fs.path.dirname(outname).?);
+        const of = try std.fs.cwd().createFile(outname, .{});
+        try doc.root.html(of.writer());
+
+        std.debug.print("{s} -> {s}", .{ fname, outname });
+    }
 }
 
 fn parseFile(outdir: []const u8, fname: []const u8) void {
@@ -70,7 +83,7 @@ fn parseFile(outdir: []const u8, fname: []const u8) void {
     defer arena.deinit();
     const allocator = arena.allocator();
     parseFile2(allocator, outdir, fname) catch |e| {
-        std.debug.print("{}\n", .{ e });
+        std.debug.print("Error parsing {}: {}\n", .{ fname, e });
         std.process.exit(1);
     };
 }

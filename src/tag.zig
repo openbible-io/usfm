@@ -430,6 +430,13 @@ pub const Tag = union(enum) {
         return !self.isMilestoneStart() and !self.isMilestoneEnd() and !self.isParagraph();
     }
 
+    pub fn isIdentification(self: Tag) bool {
+        return switch (self) {
+            .id, .usfm, .ide, .sts, .rem, .h, .toc, .toca => true,
+            else => false,
+        };
+    }
+
     pub fn validAttributes(self: Tag) []const []const u8 {
         return switch (self) {
             .w => &[_][]const u8{"lemma", "strong", "srcloc"},
