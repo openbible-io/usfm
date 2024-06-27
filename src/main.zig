@@ -89,7 +89,7 @@ fn parseFile(outdir: []const u8, fname: []const u8) void {
     defer arena.deinit();
     const allocator = arena.allocator();
     parseFile2(allocator, outdir, fname) catch |e| {
-        std.debug.print("Error parsing {}: {}\n", .{ fname, e });
+        std.debug.print("Error parsing {s}: {}\n", .{ fname, e });
         std.process.exit(1);
     };
 }

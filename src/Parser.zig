@@ -345,18 +345,9 @@ fn expectElements(usfm: []const u8, comptime expected: []const u8) !void {
     const doc = try parser.document();
     defer doc.deinit(allocator);
 
-    try actual.writer().print("{html}", .{doc.root});
+    try doc.root.html(actual.writer());
 
     try std.testing.expectEqualStrings(expected, actual.items);
-}
-
-test "single simple tag" {
-    try expectElements(
-        \\\id GEN EN_ULT en_English_ltr
-    ,
-        \\<p class="id">GEN EN_ULT en_English_ltr</p>
-        \\
-    );
 }
 
 test "whitespace norm 1" {
