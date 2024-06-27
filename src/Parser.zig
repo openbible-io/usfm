@@ -36,7 +36,7 @@ fn expectClose(self: *Parser, open: Token) !void {
         _ = try self.lexer.next();
         const open_text = self.lexer.view(open);
         const close_text = self.lexer.view(close);
-        if (std.mem.eql(u8, open_text, close_text[0..close_text.len - 1])) return;
+        if (std.mem.eql(u8, open_text, close_text[0 .. close_text.len - 1])) return;
     }
     try self.appendErr(close, Error.Kind{ .expected_close = open });
     return error.ExpectedClose;
@@ -93,7 +93,9 @@ pub fn document(self: *Parser) !Document {
     };
 }
 
-fn anyNode(_: Tag) bool { return true; }
+fn anyNode(_: Tag) bool {
+    return true;
+}
 
 pub const Document = struct {
     root: Element,
@@ -134,7 +136,7 @@ fn nodeBuilder(self: *Parser, filter: fn (t: Tag) bool) !?NodeBuilder {
 
     if (!filter(tag)) return null;
     _ = try self.lexer.next();
-    
+
     var res = NodeBuilder.init(self.allocator, token, tag);
     try self.parseSpecialText(&res);
     return res;
@@ -153,8 +155,8 @@ fn parseMilestone(self: *Parser) !?Element {
         const err = Error.Kind{ .expected_milestone_close_open = builder.token };
         const end = try self.expect(.tag_open, err);
         const end_tag = try self.parseTag(end);
-        const expected = self.lexer.view(builder.token)[0..self.lexer.view(builder.token).len - 1];
-        const actual = self.lexer.view(end)[0..self.lexer.view(end).len - 1];
+        const expected = self.lexer.view(builder.token)[0 .. self.lexer.view(builder.token).len - 1];
+        const actual = self.lexer.view(end)[0 .. self.lexer.view(end).len - 1];
         if (!end_tag.isMilestoneEnd() or !std.mem.eql(u8, expected, actual)) {
             try self.appendErr(end, err);
             return error.UnexpectedMilestoneClose;
@@ -182,12 +184,10 @@ fn parseParagraph(self: *Parser) !?Element {
     defer builder.deinit();
 
     if (builder.tag != .c) { // chapters are just markers
-        while (
-            try self.parseMilestone() orelse
+        while (try self.parseMilestone() orelse
             try self.parseInline() orelse
             try self.parseCharacter() orelse
-            try self.parseText()
-        ) |c| try builder.children.append(c);
+            try self.parseText()) |c| try builder.children.append(c);
     }
 
     return Element{ .node = try builder.toOwned() };
@@ -217,7 +217,7 @@ fn parseText(self: *Parser) !?Element {
     if (token.tag != .text) return null;
     _ = try self.lexer.next();
 
-    return Element{ .text =  self.lexer.view(token) };
+    return Element{ .text = self.lexer.view(token) };
 }
 
 fn parseAttributes(self: *Parser, tag: Tag, out: *std.ArrayList(Element.Node.Attribute)) !void {
@@ -254,7 +254,7 @@ fn parseAttributes(self: *Parser, tag: Tag, out: *std.ArrayList(Element.Node.Att
                     try self.appendErr(n, Error.Kind{ .no_default_attribute = tag });
                     return error.NoDefaultAttribute;
                 }
-            }
+            },
         }
     }
 }
@@ -325,7 +325,7 @@ const NodeBuilder = struct {
     }
 
     pub fn toOwned(self: *NodeBuilder) !Element.Node {
-        return Element.Node {
+        return Element.Node{
             .tag = self.tag,
             .attributes = try self.attributes.toOwnedSlice(),
             .children = try self.children.toOwnedSlice(),
@@ -345,15 +345,15 @@ fn expectElements(usfm: []const u8, comptime expected: []const u8) !void {
     const doc = try parser.document();
     defer doc.deinit(allocator);
 
-    try actual.writer().print("{html}", .{ doc.root });
-    
+    try actual.writer().print("{html}", .{doc.root});
+
     try std.testing.expectEqualStrings(expected, actual.items);
 }
 
 test "single simple tag" {
     try expectElements(
         \\\id GEN EN_ULT en_English_ltr
-        ,
+    ,
         \\<p class="id">GEN EN_ULT en_English_ltr</p>
         \\
     );
@@ -362,9 +362,9 @@ test "single simple tag" {
 test "whitespace norm 1" {
     try expectElements(
         \\\p
-        ++ whitespace ++ whitespace ++
+    ++ whitespace ++ whitespace ++
         \\asdf
-        ,
+    ,
         \\<p> asdf</p>
         \\
     );
@@ -373,7 +373,7 @@ test "whitespace norm 1" {
 test "single attribute tag" {
     try expectElements(
         \\\v 1\qs hello |   x-occurences  =   "1" \qs*
-        ,
+    ,
         \\<sup>1</sup><span class="qs">hello </span>
     );
 }
@@ -381,7 +381,7 @@ test "single attribute tag" {
 test "empty attribute tag" {
     try expectElements(
         \\\v 1\w hello|\w*
-        ,
+    ,
         \\<sup>1</sup>hello
     );
 }
@@ -389,7 +389,7 @@ test "empty attribute tag" {
 test "milestones" {
     try expectElements(
         \\\zaln-s\*\w In \w*side\zaln-e\* there
-        ,
+    ,
         \\In side there
     );
 }
@@ -405,9 +405,7 @@ test "footnote with inline fqa" {
 test "footnote with block fqa" {
     try expectElements(
         \\\f +\fq a\ft b\fqa c\ft d\f*
-    ,
-        ""
-    );
+    , "");
 }
 
 test "paragraphs" {
@@ -438,4 +436,3 @@ const whitespace = Lexer.whitespace;
 const Error = err_mod.Error;
 const Errors = err_mod.Errors;
 const Parser = @This();
-

@@ -20,23 +20,21 @@ pub const ErrorContext = struct {
         switch (err.kind) {
             .invalid_tag => try w.writeAll("invalid tag"),
             .invalid_root => try w.writeAll("invalid root element"),
-            .invalid_attribute => |a| try w.print("invalid attribute \"{s}\"", .{ a }),
+            .invalid_attribute => |a| try w.print("invalid attribute \"{s}\"", .{a}),
             .expected_milestone_close_open => try w.writeAll("expected milestone end tag"),
             .expected_close => try w.writeAll("expected closing tag"),
             .expected_self_close => try w.writeAll("expected self-closing tag"),
             .expected_attribute_value => try w.writeAll("expected attribute value"),
             .expected_caller => try w.writeAll("expected caller"),
             .expected_number => try w.writeAll("expected number"),
-            .no_default_attribute => |t| try w.print("{s} has no default attributes", .{ @tagName(t) }),
+            .no_default_attribute => |t| try w.print("{s} has no default attributes", .{@tagName(t)}),
         }
         tty_config.setColor(w, .reset) catch {};
-        if (chapter) |c| try w.print(" in chapter {d}", .{ c });
+        if (chapter) |c| try w.print(" in chapter {d}", .{c});
         try self.printContext(line_start, err.token);
 
         switch (err.kind) {
-            inline .expected_milestone_close_open,
-            .expected_close,
-            .expected_self_close => |t| {
+            inline .expected_milestone_close_open, .expected_close, .expected_self_close => |t| {
                 const line_start2 = lineStart(self.buffer, t);
                 try self.printLoc(line_start2, t);
                 tty_config.setColor(w, .blue) catch {};
@@ -76,12 +74,12 @@ pub const ErrorContext = struct {
 
         const line_end = if (std.mem.indexOfScalarPos(u8, self.buffer, token.end, '\n')) |n| n else self.buffer.len;
         try w.writeByte('\n');
-        try w.print("{s}", .{ self.buffer[line_start..token.start] });
+        try w.print("{s}", .{self.buffer[line_start..token.start]});
         if (token.end != token.start) {
             tty_config.setColor(w, .green) catch {};
-            try w.print("{s}", .{ self.buffer[token.start..token.end] });
+            try w.print("{s}", .{self.buffer[token.start..token.end]});
             tty_config.setColor(w, .reset) catch {};
-            try w.print("{s}", .{ self.buffer[token.end..line_end] });
+            try w.print("{s}", .{self.buffer[token.end..line_end]});
         }
         try w.writeByte('\n');
     }

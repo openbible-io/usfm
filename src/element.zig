@@ -71,8 +71,8 @@ const HtmlFormatter = struct {
         var class: ?[]const u8 = null;
         var tag: ?[]const u8 = null;
         switch (node.tag) {
-            .p =>  tag = "p",
-            .v =>  tag = "sup",
+            .p => tag = "p",
+            .v => tag = "sup",
             .w, .root => {},
             .f, .fe => {
                 // if (node.children.len < 2) return;
@@ -112,12 +112,12 @@ const HtmlFormatter = struct {
                     tag = "span";
                 }
                 class = @tagName(t);
-            }
+            },
         }
 
         if (tag) |t| {
-            try w.print("<{s}", .{ t });
-            if (class) |c| try w.print(" class=\"{s}\"", .{ c });
+            try w.print("<{s}", .{t});
+            if (class) |c| try w.print(" class=\"{s}\"", .{c});
 
             // if (node.attributes.len > 0) {
             //     try w.writeAll(" ");
@@ -132,7 +132,7 @@ const HtmlFormatter = struct {
         for (node.children) |c| try self.fmt(w, c);
 
         if (tag) |t| {
-            try w.print("</{s}>", .{ t });
+            try w.print("</{s}>", .{t});
             if (node.tag.isParagraph()) try w.writeByte('\n');
         }
     }

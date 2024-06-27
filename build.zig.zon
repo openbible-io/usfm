@@ -1,12 +1,17 @@
-.{ .name = "usfm", .version = "0.2.0", .dependencies = .{
-    .zigcli = .{
+.{
+    .name = "usfm",
+    .version = "0.2.1",
+    .dependencies = .{
+        .zigcli = .{
             .url = "https://github.com/jiacai2050/zigcli/archive/54d095c0a53669b2f2ff4e173e8c22f47d496eda.tar.gz",
             .hash = "1220e8fb37224ab6ee9c575129594a808643b548596d63dd8b87cb42e22a7eed9f51",
         },
-}, .paths = .{
-    "build.zig",
-    "build.zig.zon",
-    "src",
-    "LICENSE",
-    "README.md",
-} }
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSE",
+        "README.md",
+    },
+}

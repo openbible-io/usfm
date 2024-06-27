@@ -194,7 +194,7 @@ pub const Tag = union(enum) {
             return error.MissingTagPrefix;
         }
         var buffer = in_buffer[1..];
-        if (buffer[buffer.len - 1] == '*') buffer = buffer[0..buffer.len - 1];
+        if (buffer[buffer.len - 1] == '*') buffer = buffer[0 .. buffer.len - 1];
 
         const digits = [_]u8{ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
         const digit_n = std.mem.indexOfAny(u8, buffer, &digits) orelse buffer.len;
@@ -439,10 +439,10 @@ pub const Tag = union(enum) {
 
     pub fn validAttributes(self: Tag) []const []const u8 {
         return switch (self) {
-            .w => &[_][]const u8{"lemma", "strong", "srcloc"},
+            .w => &[_][]const u8{ "lemma", "strong", "srcloc" },
             .rb => &[_][]const u8{"gloss"},
-            .xt => &[_][]const u8{"link-href" },
-            .fig => &[_][]const u8{"alt", "src", "size", "loc", "copy", "ref"},
+            .xt => &[_][]const u8{"link-href"},
+            .fig => &[_][]const u8{ "alt", "src", "size", "loc", "copy", "ref" },
             else => &[_][]const u8{},
         };
     }

@@ -62,7 +62,13 @@ fn parseFile2(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u
     }
 
     if (n_chapters > 0) {
-        std.debug.print("{s} -> {s}{c}{s}/{{001..{d:0>3}}}.html\n", .{fname, outdir, std.fs.path.sep, std.fs.path.stem(fname), n_chapters,});
+        std.debug.print("{s} -> {s}{c}{s}/{{001..{d:0>3}}}.html\n", .{
+            fname,
+            outdir,
+            std.fs.path.sep,
+            std.fs.path.stem(fname),
+            n_chapters,
+        });
     } else {
         const outname = try std.fmt.allocPrint(allocator, "{s}{c}{s}.html", .{
             outdir,

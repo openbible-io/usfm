@@ -163,9 +163,9 @@ fn expectTokens(usfm: []const u8, expected: []const Expected) !void {
 test "single simple tag" {
     try expectTokens(
         \\\id GEN EN_ULT en_English_ltr
-        ,
+    ,
         &[_]Expected{
-            .{ .tag = .tag_open, .text= "\\id" },
+            .{ .tag = .tag_open, .text = "\\id" },
             .{ .tag = .text, .text = "GEN EN_ULT en_English_ltr" },
         },
     );
@@ -178,7 +178,7 @@ test "two simple tags" {
     ,
         &[_]Expected{
             .{ .tag = .tag_open },
-            .{  .tag = .text, .text = "GEN EN_ULT en_English_ltr\n" },
+            .{ .tag = .text, .text = "GEN EN_ULT en_English_ltr\n" },
             .{ .tag = .tag_open },
             .{ .tag = .text },
         },
@@ -192,11 +192,11 @@ test "single attribute tag" {
         &[_]Expected{
             .{ .tag = .tag_open, .text = "\\word" },
             .{ .tag = .text, .text = "hello " },
-            .{  .tag = .attribute_start, .text = "|" },
-            .{  .tag = .id, .text = "x-occurences" },
-            .{  .tag = .@"=", .text = "=" },
-            .{  .tag = .id, .text = "1" },
-            .{  .tag = .tag_close, .text = "\\word*" },
+            .{ .tag = .attribute_start, .text = "|" },
+            .{ .tag = .id, .text = "x-occurences" },
+            .{ .tag = .@"=", .text = "=" },
+            .{ .tag = .id, .text = "1" },
+            .{ .tag = .tag_close, .text = "\\word*" },
         },
     );
 }
@@ -217,7 +217,7 @@ test "empty attribute tag" {
 test "attributes with spaces" {
     try expectTokens(
         \\\zaln-s |x-lemma="a b" x-abc="123" \*\zaln-e\*
-        ,
+    ,
         &[_]Expected{
             .{ .tag = .tag_open },
             .{ .tag = .attribute_start },
@@ -234,11 +234,10 @@ test "attributes with spaces" {
     );
 }
 
-
 test "milestones" {
     try expectTokens(
         \\\v 1 \zaln-s\*\w In\w*\zaln-e\*there
-        ,
+    ,
         &[_]Expected{
             .{ .tag = .tag_open },
             .{ .tag = .text },
@@ -260,7 +259,7 @@ test "self closing tag" {
     ,
         &[_]Expected{
             .{ .tag = .tag_open, .text = "\\zaln-s" },
-            .{  .tag = .text, .text = "hello" },
+            .{ .tag = .text, .text = "hello" },
             .{ .tag = .tag_close, .text = "\\*" },
         },
     );
@@ -275,7 +274,9 @@ test "line breaks" {
         &[_]Expected{
             .{ .tag = .tag_open },
             .{ .tag = .text, .text = "1 " },
-            .{ .tag = .tag_open, },
+            .{
+                .tag = .tag_open,
+            },
             .{ .tag = .text, .text = "In" },
             .{ .tag = .tag_close },
             .{ .tag = .text, .text = "\n" },
