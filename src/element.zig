@@ -102,6 +102,10 @@ const HtmlFormatter = struct {
                 }
                 if (t != .s) class = @tagName(t);
             },
+            .sr => {
+                tag = "h2";
+                class = "sr";
+            },
             .em => tag = "em",
             .bd => tag = "b",
             .it => tag = "i",
@@ -127,17 +131,7 @@ const HtmlFormatter = struct {
 
         if (tag) |t| {
             try w.print("<{s}", .{t});
-            if (class) |c| {
-                try w.print(" class=\"{s}", .{c});
-                switch (node.tag) {
-                    inline else => |_, f| {
-                        if (std.meta.FieldType(Tag, f) == u8) {
-                            try w.print("{d}", .{ @field(node.tag, @tagName(f)) });
-                        }
-                    }
-                }
-                try w.writeByte('"');
-            }
+            if (class) |c| try w.print(" class=\"{s}\"", .{c});
 
             // if (node.attributes.len > 0) {
             //     try w.writeAll(" ");
