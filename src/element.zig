@@ -102,7 +102,10 @@ const HtmlFormatter = struct {
             .em => tag = "em",
             .bd => tag = "b",
             .it => tag = "i",
-            .sup => tag = "sup",
+            .sup => {
+                tag = "sup";
+                class = "not-verse";
+            },
             .b => {
                 try w.writeAll("<br>");
                 return;

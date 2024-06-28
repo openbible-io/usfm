@@ -85,13 +85,13 @@ pub const Tag = union(enum) {
     qd, // hebrew note
 
     // lists
-    lh, // list header
-    li, // list entry
-    lf, // list footer
-    lim: u8, // embedded list entry
-    litl, // list entry total
-    lik, // list entry key
-    liv: u8, // list entry value
+    lh, // header
+    li, // entry
+    lf, // footer
+    lim: u8, // embedded entry
+    litl, // entry total
+    lik, // entry key
+    liv: u8, // entry value
 
     // tables
     tr, // table row
