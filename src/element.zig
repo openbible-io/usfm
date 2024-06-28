@@ -103,6 +103,10 @@ const HtmlFormatter = struct {
             .bd => tag = "b",
             .it => tag = "i",
             .sup => tag = "sup",
+            .b => {
+                try w.writeAll("<br>");
+                return;
+            },
             else => |t| {
                 if (t.isIdentification()) {
                     return;
