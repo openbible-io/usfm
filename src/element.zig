@@ -90,21 +90,24 @@ const HtmlFormatter = struct {
                 return;
             },
             .c => return,
-            inline .mt, .imt => |lvl| switch (lvl) {
-                0, 1 => tag = "h1",
-                2 => tag = "h2",
-                3 => tag = "h3",
-                4 => tag = "h4",
-                5 => tag = "h5",
-                6 => tag = "h6",
-                else => return error.InvalidHeadingLevel,
+            inline .mt, .mte, .imt, .imte, .s, .ms => |lvl, t| {
+                switch (lvl) {
+                    0, 1 => tag = "h1",
+                    2 => tag = "h2",
+                    3 => tag = "h3",
+                    4 => tag = "h4",
+                    5 => tag = "h5",
+                    6 => tag = "h6",
+                    else => return error.InvalidHeadingLevel,
+                }
+                if (t != .s) class = @tagName(t);
             },
             .em => tag = "em",
             .bd => tag = "b",
             .it => tag = "i",
             .sup => {
                 tag = "sup";
-                class = "not-verse";
+                class = "sup";
             },
             .b => {
                 try w.writeAll("<br>");

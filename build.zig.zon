@@ -1,6 +1,6 @@
 .{
     .name = "usfm",
-    .version = "0.2.3",
+    .version = "0.2.4",
     .dependencies = .{
         .zigcli = .{
             .url = "https://github.com/jiacai2050/zigcli/archive/54d095c0a53669b2f2ff4e173e8c22f47d496eda.tar.gz",
