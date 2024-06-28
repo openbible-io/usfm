@@ -65,7 +65,10 @@ const HtmlFormatter = struct {
         }
     }
 
-    const Error = error{InvalidHeadingLevel};
+    const Error = error{
+        InvalidHeadingLevel,
+        InvalidQLevel,
+    };
 
     fn fmtNode(self: *HtmlFormatter, w: anytype, node: Element.Node) !void {
         var class: ?[]const u8 = null;
@@ -101,6 +104,18 @@ const HtmlFormatter = struct {
                     else => return error.InvalidHeadingLevel,
                 }
                 if (t != .s) class = @tagName(t);
+            },
+            .q => |lvl| {
+                tag = "p";
+                class = switch (lvl) {
+                    0, 1 => "q1",
+                    2 => "q2",
+                    3 => "q3",
+                    4 => "q4",
+                    5 => "q5",
+                    6 => "q6",
+                    else => return error.InvalidQLevel,
+                };
             },
             .sr => {
                 tag = "h2";
