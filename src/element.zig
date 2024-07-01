@@ -145,6 +145,8 @@ const HtmlFormatter = struct {
         }
 
         if (tag) |t| {
+            if (std.mem.eql(u8, t, "p") and node.children.len == 0) return;
+
             try w.print("<{s}", .{t});
             if (class) |c| try w.print(" class=\"{s}\"", .{c});
 

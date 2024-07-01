@@ -80,7 +80,7 @@ fn parseFile2(allocator: std.mem.Allocator, outdir: []const u8, fname: []const u
         const of = try std.fs.cwd().createFile(outname, .{});
         try doc.root.html(of.writer());
 
-        std.debug.print("{s} -> {s}", .{ fname, outname });
+        std.debug.print("{s} -> {s}\n", .{ fname, outname });
     }
 }
 
